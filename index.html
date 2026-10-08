@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <title>Trip Manifest</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --line: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+      max-width: 480px;
+      margin-inline: auto;
+    }
+    h1 { font-size: 1.35rem; margin: 0 0 4px; }
+    h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 20px 0 8px; }
+    .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 16px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .label { color: var(--muted); font-size: 0.8rem; }
+    .value { font-weight: 600; font-size: 1.05rem; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    button, a.btn, select.trip-select {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-decoration: none;
+      color: #fff;
+      background: var(--accent);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    select.trip-select {
+      flex: 1;
+      border-radius: 12px;
+      background: #1e293b;
+      border: 1px solid var(--line);
+      min-width: 0;
+    }
+    a.btn.secondary, button.secondary { background: #334155; }
+    a.btn.uber { background: #000; }
+    a.btn.maps { background: #0ea5e9; }
+    a.btn.danger, button.danger { background: #7f1d1d; }
+    .chip {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #172554;
+      color: #93c5fd;
+      margin-left: 6px;
+    }
+    .chip.warn { background: #422006; color: #fcd34d; }
+    .chip.good { background: #052e16; color: #86efac; }
+    textarea, input, select.field {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px;
+      font: inherit;
+      margin-top: 6px;
+    }
+    .edit-panel { display: none; }
+    body.editing .edit-panel { display: block; }
+    body.editing .view-panel { display: none; }
+    .toolbar, .trip-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+    .hint { font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
+    ul.check { list-style: none; padding: 0; margin: 0; }
+    ul.check li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    ul.check li:last-child { border-bottom: 0; }
+    footer { margin-top: 24px; color: var(--muted); font-size: 0.8rem; }
+    .toggle-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+    .toggle-row input { width: auto; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="trip-bar">
+    <select id="tripSelect" class="trip-select" aria-label="Select trip"></select>
+    <button type="button" id="addTrip" class="secondary">New</button>
+  </div>
+
+  <div class="toolbar">
+    <button type="button" id="toggleEdit" class="secondary">Edit trip</button>
+    <button type="button" id="exportData" class="secondary">Export</button>
+    <button type="button" id="importData" class="secondary">Import</button>
+    <input type="file" id="importFile" accept="application/json,.json" hidden />
+    <button type="button" id="saveTrip" class="secondary" hidden>Save</button>
+    <button type="button" id="deleteTrip" class="danger" hidden>Delete trip</button>
+    <button type="button" id="resetTrip" class="secondary" hidden>Reset demo</button>
+  </div>
+
+  <div class="view-panel">
+    <h1 id="tripTitle">OKC work trip</h1>
+    <p class="sub" id="tripDates">Oct 12–16, 2026 · from PDX (EUG preferred when close)</p>
+  </div>
+
+  <div class="edit-panel">
+    <label class="label">Trip title</label>
+    <input id="editTitle" />
+    <label class="label">Dates / notes</label>
+    <input id="editDates" />
+  </div>
+
+  <h2>Flights</h2>
+  <div id="flights"></div>
+
+  <h2>Airport shuttles</h2>
+  <div id="shuttles"></div>
+
+  <h2>Lodging</h2>
+  <div id="lodging"></div>
+
+  <h2>Sites &amp; customers</h2>
+  <div id="sites"></div>
+
+  <h2>Receipts</h2>
+  <div class="card">
+    <p class="hint" style="margin-top:0">Confirm mail to your travel inbox (add confirmations on phone — this page is public).</p>
+    <ul class="check" id="receipts"></ul>
+  </div>
+
+  <div class="edit-panel card">
+    <h2 style="margin-top:0">Raw trip JSON</h2>
+    <textarea id="editJson" rows="16" spellcheck="false"></textarea>
+    <p class="hint">Edit JSON and tap Save. For Groome, set <span class="mono">roundTrip: true</span> so one confirmation updates both legs.</p>
+  </div>
+
+  <footer>
+    Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
+    <div id="appVersion">App v5</div>
+  </footer>
+
+  <script>
+    const GROOME_URL = "https://groometransportation.com/";
+    const STORE_KEY = "trip-manifest-store-v3";
+    const LEGACY_KEY = "trip-manifest-v1";
+
+    function emptyShuttle(leg, note) {
+      return {
+        leg,
+        carrier: "Groome Transportation",
+        when: "",
+        route: "",
+        confirmation: "",
+        pickupAddress: "",
+        note: note || "",
+        status: "tentative",
+        bookUrl: GROOME_URL
+      };
+    }
+
+    const APP_VERSION = "v5 · 2026-10-08";
+    const APPLIED_KEY = "trip-manifest-applied-updates";
+
+    // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
+    function okcBooking() {
+      return {
+        airline: "Southwest Airlines",
+        confirmation: "",
+        ticket: "",
+        total: "",
+        fare: "Basic · booked 09/27/2026",
+        note: "Add confirmation & ticket # on phone · Airline receipt in travel inbox"
+      };
+    }
+
+    function okcFlights() {
+      return [
+        {
+          leg: "Outbound 1/2 · Mon Oct 12",
+          summary: "Southwest WN 3314 · PDX → DEN",
+          when: "Mon Oct 12 · 2:35 PM – 6:00 PM",
+          detail: "Change planes in DEN (1h 25m) · Seat 19C Standard",
+          status: "booked",
+          airline: "Southwest", flight: "WN 3314", from: "PDX", to: "DEN",
+          date: "2026-10-12", depart: "14:35", arrive: "18:00", seat: "19C (Standard)"
+        },
+        {
+          leg: "Outbound 2/2 · Mon Oct 12",
+          summary: "Southwest WN 1704 · DEN → OKC",
+          when: "Mon Oct 12 · 7:25 PM – 10:00 PM",
+          detail: "Arrive Oklahoma City · Seat 19C Standard · Total travel 5h 25m",
+          status: "booked",
+          airline: "Southwest", flight: "WN 1704", from: "DEN", to: "OKC",
+          date: "2026-10-12", depart: "19:25", arrive: "22:00", seat: "19C (Standard)"
+        },
+        {
+          leg: "Return 1/2 · Thu Oct 15",
+          summary: "Southwest WN 3232 · OKC → DEN",
+          when: "Thu Oct 15 · 7:20 PM – 8:05 PM",
+          detail: "Change planes in DEN (50m) · Seat 15C Preferred",
+          status: "booked",
+          airline: "Southwest", flight: "WN 3232", from: "OKC", to: "DEN",
+          date: "2026-10-15", depart: "19:20", arrive: "20:05", seat: "15C (Preferred)"
+        },
+        {
+          leg: "Return 2/2 · Thu Oct 15",
+          summary: "Southwest WN 1778 · DEN → PDX",
+          when: "Thu Oct 15 · 8:55 PM – 10:45 PM",
+          detail: "Arrive Portland · Seat 20C Standard · Total travel 5h 25m",
+          status: "booked",
+          airline: "Southwest", flight: "WN 1778", from: "DEN", to: "PDX",
+          date: "2026-10-15", depart: "20:55", arrive: "22:45", seat: "20C (Standard)"
+        }
+      ];
+    }
+
+    function yulBooking() {
+      return {
+        airline: "Air Canada",
+        confirmation: "",
+        ticket: "",
+        total: "",
+        fare: "Economy Standard · issued 28 Sep 2026",
+        note: "Add confirmation & ticket # on phone · Airline receipt in travel inbox"
+      };
+    }
+
+    function yulFlights() {
+      const timeNote = "Times as listed in AC email (local); listed durations disagree with YVR times — verify in AC app";
+      return [
+        {
+          leg: "Outbound 1/2 · Sun Nov 29",
+          summary: "Air Canada AC 8651 · PDX → YVR",
+          when: "Sun Nov 29 · 10:00 AM – 12:19 PM",
+          detail: "Operated by Air Canada Express – Jazz (Dash 8-400) · Economy (L) · Change planes in YVR (1h 31m) · Seat not assigned · " + timeNote,
+          status: "booked",
+          airline: "Air Canada", flight: "AC 8651", from: "PDX", to: "YVR",
+          date: "2026-11-29", depart: "10:00", arrive: "12:19", seat: ""
+        },
+        {
+          leg: "Outbound 2/2 · Sun Nov 29",
+          summary: "Air Canada AC 308 · YVR → YUL",
+          when: "Sun Nov 29 · 1:50 PM – 8:30 PM",
+          detail: "Boeing 787-9 · Economy (L) · Arrive Montréal-Trudeau · Seat not assigned",
+          status: "booked",
+          airline: "Air Canada", flight: "AC 308", from: "YVR", to: "YUL",
+          date: "2026-11-29", depart: "13:50", arrive: "20:30", seat: ""
+        },
+        {
+          leg: "Return 1/2 · Fri Dec 4",
+          summary: "Air Canada AC 303 · YUL → YVR",
+          when: "Fri Dec 4 · 8:45 AM – 12:20 PM",
+          detail: "Boeing 787-9 · Economy (G) · Change planes in YVR (2h 05m) · Seat not assigned · " + timeNote,
+          status: "booked",
+          airline: "Air Canada", flight: "AC 303", from: "YUL", to: "YVR",
+          date: "2026-12-04", depart: "08:45", arrive: "12:20", seat: ""
+        },
+        {
+          leg: "Return 2/2 · Fri Dec 4",
+          summary: "Air Canada AC 8652 · YVR → PDX",
+          when: "Fri Dec 4 · 2:25 PM – 2:41 PM",
+          detail: "Operated by Air Canada Express – Jazz (Dash 8-400) · Economy (G) · Arrive Portland · Seat not assigned",
+          status: "booked",
+          airline: "Air Canada", flight: "AC 8652", from: "YVR", to: "PDX",
+          date: "2026-12-04", depart: "14:25", arrive: "14:41", seat: ""
+        }
+      ];
+    }
+
+    function standardReceipts() {
+      return [
+        { id: "air", label: "Airline confirmation / receipt", done: false },
+        { id: "hotel", label: "Hotel receipt", done: false },
+        { id: "shuttle", label: "Groome / airport shuttle receipt", done: false },
+        { id: "ground", label: "Ground / Uber if needed", done: false }
+      ];
+    }
+
+    function markAirReceipt(trip, note) {
+      if (!Array.isArray(trip.receipts)) trip.receipts = standardReceipts();
+      let air = trip.receipts.find((r) => r.id === "air");
+      if (!air) {
+        air = { id: "air", label: "Airline confirmation / receipt", done: false };
+        trip.receipts.unshift(air);
+      }
+      air.done = true;
+      air.note = note;
+      return trip;
+    }
+
+    function makeYulTrip() {
+      const trip = {
+        id: "yul-2026-11",
+        title: "Montréal Nov–Dec 2026",
+        dates: "Sun Nov 29 – Fri Dec 4, 2026 · PDX ⇄ YUL via YVR",
+        booking: yulBooking(),
+        flights: yulFlights(),
+        shuttleRoundTrip: true,
+        shuttleRoundTripConfirmation: "",
+        shuttleRoundTripBookUrl: GROOME_URL,
+        shuttles: [
+          emptyShuttle("To airport", "Home area → PDX · flight departs 10:00 AM Sun Nov 29"),
+          emptyShuttle("From airport", "PDX → Home area · flight lands 2:41 PM Fri Dec 4")
+        ],
+        lodging: { name: "Hotel TBD", address: "", checkIn: "Nov 29", checkOut: "Dec 4", confirmation: "" },
+        sites: [{ name: "Work site / customer", address: "", note: "Paste street address for one-tap Uber" }],
+        receipts: standardReceipts()
+      };
+      return markAirReceipt(trip, "Air Canada receipt received in travel inbox");
+    }
+
+    // ---- One-time data updates, applied on load to data already saved on the phone ----
+    const OKC_OLD_DEFAULT_DATES = "Mon Oct 12 – Fri Oct 16, 2026 · PDX (check EUG)";
+    const OKC_BOOKED_DATES = "Mon Oct 12 – Thu Oct 15, 2026 · PDX";
+
+    function findOkcTrip(store) {
+      const trips = store.trips || [];
+      return trips.find((t) => t.id === "okc-2026-10")
+        || trips.find((t) => /\bokc\b|oklahoma/i.test(t.title || ""))
+        || trips.find((t) => (t.flights || []).some((f) => /\bOKC\b/.test((f.summary || "") + " " + (f.when || ""))))
+        || null;
+    }
+
+    function findYulTrip(store) {
+      const trips = store.trips || [];
+      return trips.find((t) => t.id === "yul-2026-11")
+        || trips.find((t) => /montr[eé]al|\byul\b/i.test(t.title || ""))
+        || null;
+    }
+
+    const UPDATES = [
+      {
+        id: "2026-09-28-booked-okc-yul",
+        apply(store) {
+          // OKC: replace flights with the booked Southwest itinerary; leave lodging/sites/shuttles alone.
+          let okc = findOkcTrip(store);
+          if (!okc) {
+            okc = normalizeTrip(makeOkcTrip());
+            store.trips.push(okc);
+          } else {
+            okc.flights = okcFlights();
+            okc.booking = okcBooking();
+            if (!okc.dates || okc.dates === OKC_OLD_DEFAULT_DATES) okc.dates = OKC_BOOKED_DATES;
+            markAirReceipt(okc, "Southwest receipt received in travel inbox");
+          }
+          // Montréal: add trip, or fill flights/booking into one the user already created.
+          const yul = findYulTrip(store);
+          if (!yul) {
+            store.trips.push(normalizeTrip(makeYulTrip()));
+          } else {
+            yul.flights = yulFlights();
+            yul.booking = yulBooking();
+            markAirReceipt(yul, "Air Canada receipt received in travel inbox");
+          }
+          return store;
+        }
+      }
+    ];
+
+    function readApplied() {
+      try {
+        const a = JSON.parse(localStorage.getItem(APPLIED_KEY) || "[]");
+        return Array.isArray(a) ? a : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function applyPendingUpdates() {
+      const applied = readApplied();
+      const pending = UPDATES.filter((u) => !applied.includes(u.id));
+      if (!pending.length) return [];
+      const store = loadStore();
+      const done = [];
+      pending.forEach((u) => {
+        try {
+          u.apply(store);
+          done.push(u.id);
+        } catch (e) {
+          console.warn("Trip update failed", u.id, e);
+        }
+      });
+      if (done.length) {
+        saveStore(store);
+        localStorage.setItem(APPLIED_KEY, JSON.stringify(applied.concat(done)));
+      }
+      return done;
+    }
+
+    function makeOkcTrip() {
+      const trip = {
+        id: "okc-2026-10",
+        title: "OKC work trip",
+        dates: OKC_BOOKED_DATES,
+        booking: okcBooking(),
+        flights: okcFlights(),
+        shuttleRoundTrip: true,
+        shuttleRoundTripConfirmation: "",
+        shuttleRoundTripBookUrl: GROOME_URL,
+        shuttles: [
+          emptyShuttle("To airport", "Home area → PDX or EUG"),
+          emptyShuttle("From airport", "PDX or EUG → Home area")
+        ],
+        lodging: {
+          name: "Hotel TBD",
+          address: "",
+          checkIn: "Oct 12 or 13",
+          checkOut: "Oct 15 or 16",
+          confirmation: ""
+        },
+        sites: [
+          {
+            name: "Work site / customer",
+            address: "",
+            note: "Paste street address for one-tap Uber"
+          }
+        ],
+        receipts: standardReceipts()
+      };
+      return markAirReceipt(trip, "Southwest receipt received in travel inbox");
+    }
+
+    function makeBlankTrip(title) {
+      const id = "trip-" + Date.now();
+      return {
+        id,
+        title: title || "New trip",
+        dates: "",
+        flights: [],
+        shuttleRoundTrip: true,
+        shuttleRoundTripConfirmation: "",
+        shuttleRoundTripBookUrl: GROOME_URL,
+        shuttles: [
+          emptyShuttle("To airport", "Almost always Groome"),
+          emptyShuttle("From airport", "Linked when round trip is on")
+        ],
+        lodging: { name: "Hotel TBD", address: "", checkIn: "", checkOut: "", confirmation: "" },
+        sites: [{ name: "Work site / customer", address: "", note: "" }],
+        receipts: [
+          { id: "air", label: "Airline confirmation / receipt", done: false },
+          { id: "hotel", label: "Hotel receipt", done: false },
+          { id: "shuttle", label: "Groome / airport shuttle receipt", done: false },
+          { id: "ground", label: "Ground / Uber if needed", done: false }
+        ]
+      };
+    }
+
+    function defaultStore() {
+      const okc = makeOkcTrip();
+      return { activeId: okc.id, trips: [okc, makeYulTrip()] };
+    }
+
+    function normalizeTrip(trip) {
+      const t = trip && typeof trip === "object" ? trip : makeBlankTrip();
+      if (!t.id) t.id = "trip-" + Date.now() + "-" + Math.random().toString(16).slice(2, 6);
+      if (!Array.isArray(t.shuttles) || t.shuttles.length === 0) {
+        t.shuttles = [emptyShuttle("To airport"), emptyShuttle("From airport")];
+      }
+      if (typeof t.shuttleRoundTrip !== "boolean") t.shuttleRoundTrip = true;
+      if (t.shuttleRoundTripConfirmation == null) t.shuttleRoundTripConfirmation = "";
+      if (!t.shuttleRoundTripBookUrl) t.shuttleRoundTripBookUrl = GROOME_URL;
+      if (!Array.isArray(t.receipts)) t.receipts = [];
+      if (!t.receipts.some((r) => r.id === "shuttle")) {
+        t.receipts.splice(Math.max(0, t.receipts.findIndex((r) => r.id === "ground")), 0, {
+          id: "shuttle",
+          label: "Groome / airport shuttle receipt",
+          done: false
+        });
+      }
+      applyRoundTrip(t);
+      return t;
+    }
+
+    function applyRoundTrip(trip) {
+      if (!trip.shuttleRoundTrip) return trip;
+      const conf = (trip.shuttleRoundTripConfirmation || "").trim();
+      const book = trip.shuttleRoundTripBookUrl || GROOME_URL;
+      (trip.shuttles || []).forEach((s) => {
+        if (conf) s.confirmation = conf;
+        s.carrier = s.carrier || "Groome Transportation";
+        s.bookUrl = book;
+        if (!s.status || s.status === "tentative") {
+          s.status = conf ? "booked" : "tentative";
+        }
+      });
+      return trip;
+    }
+
+    function loadStore() {
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (raw) {
+          const store = JSON.parse(raw);
+          store.trips = (store.trips || []).map(normalizeTrip);
+          if (!store.trips.length) return defaultStore();
+          if (!store.trips.some((t) => t.id === store.activeId)) store.activeId = store.trips[0].id;
+          return store;
+        }
+        const legacy = localStorage.getItem(LEGACY_KEY);
+        if (legacy) {
+          const old = normalizeTrip(JSON.parse(legacy));
+          old.id = old.id || "migrated";
+          const store = { activeId: old.id, trips: [old] };
+          saveStore(store);
+          return store;
+        }
+      } catch (_) {}
+      return defaultStore();
+    }
+
+    function saveStore(store) {
+      localStorage.setItem(STORE_KEY, JSON.stringify(store));
+    }
+
+    function activeTrip(store) {
+      return store.trips.find((t) => t.id === store.activeId) || store.trips[0];
+    }
+
+    function uberUrl(address) {
+      if (!address || !address.trim()) return null;
+      return `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodeURIComponent(address.trim())}`;
+    }
+
+    function mapsUrl(address) {
+      if (!address || !address.trim()) return null;
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.trim())}`;
+    }
+
+    function chip(status) {
+      if (status === "booked") return '<span class="chip good">booked</span>';
+      if (status === "choice") return '<span class="chip warn">pick return</span>';
+      if (status === "roundtrip") return '<span class="chip good">round trip</span>';
+      return '<span class="chip">tentative</span>';
+    }
+
+    function escapeHtml(s) {
+      return String(s || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderTripSelect(store) {
+      const sel = document.getElementById("tripSelect");
+      sel.innerHTML = store.trips.map((t) =>
+        `<option value="${escapeHtml(t.id)}" ${t.id === store.activeId ? "selected" : ""}>${escapeHtml(t.title || "Untitled")}</option>`
+      ).join("");
+    }
+
+    function wireCopyButtons() {
+      document.querySelectorAll(".copy-btn").forEach((btn) => {
+        btn.onclick = async () => {
+          const text = decodeURIComponent(btn.dataset.copy);
+          try {
+            await navigator.clipboard.writeText(text);
+            const prev = btn.textContent;
+            btn.textContent = "Copied";
+            setTimeout(() => (btn.textContent = prev), 1200);
+          } catch {
+            prompt("Copy:", text);
+          }
+        };
+      });
+    }
+
+    function render() {
+      const store = loadStore();
+      const trip = activeTrip(store);
+      applyRoundTrip(trip);
+      renderTripSelect(store);
+
+      document.getElementById("tripTitle").textContent = trip.title || "Trip";
+      document.getElementById("tripDates").textContent = trip.dates || "";
+      document.getElementById("editTitle").value = trip.title || "";
+      document.getElementById("editDates").value = trip.dates || "";
+      document.getElementById("editJson").value = JSON.stringify(trip, null, 2);
+
+      const B = trip.booking;
+      const bookingHtml = B && (B.airline || B.confirmation || B.ticket) ? `
+        <div class="card">
+          <div class="label">Booking${chip("booked")}</div>
+          <div class="value">${escapeHtml(B.airline || "Airline")} · Conf <span class="mono">${escapeHtml(B.confirmation || "add on phone")}</span></div>
+          <div class="hint">${escapeHtml([B.ticket ? ("Ticket " + B.ticket) : "Ticket: add on phone", B.total && ("Total " + B.total), B.fare].filter(Boolean).join(" · "))}</div>
+          ${B.note ? `<div class="hint">${escapeHtml(B.note)}</div>` : ""}
+          <div class="actions">
+            ${B.confirmation ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(B.confirmation)}">Copy conf #</button>` : ""}
+            ${B.ticket ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(B.ticket)}">Copy ticket #</button>` : ""}
+          </div>
+        </div>` : "";
+
+      document.getElementById("flights").innerHTML = bookingHtml + ((trip.flights || []).map((f) => `
+        <div class="card">
+          <div class="label">${escapeHtml(f.leg || "Flight")}${chip(f.status)}</div>
+          <div class="value">${escapeHtml(f.summary || "")}</div>
+          <div>${escapeHtml(f.when || "")}</div>
+          <div class="hint">${escapeHtml(f.detail || "")}</div>
+        </div>
+      `).join("") || '<div class="card hint">No flights yet</div>');
+
+      const rt = !!trip.shuttleRoundTrip;
+      const sharedConf = trip.shuttleRoundTripConfirmation || "";
+      const book = trip.shuttleRoundTripBookUrl || GROOME_URL;
+
+      let shuttleHtml = `
+        <div class="card">
+          <div class="value">Groome booking</div>
+          <div class="toggle-row">
+            <input type="checkbox" id="roundTripToggle" ${rt ? "checked" : ""} />
+            <label for="roundTripToggle">Round trip — one confirmation for both legs</label>
+          </div>
+          ${rt ? `
+            <label class="label">Shared confirmation #</label>
+            <input id="roundTripConf" value="${escapeHtml(sharedConf)}" placeholder="Paste Groome round-trip confirmation" />
+            <div class="hint">Saving this updates pickup and return together.</div>
+            <div class="actions">
+              <a class="btn" href="${escapeHtml(book)}" target="_blank" rel="noopener">Book / manage Groome</a>
+              <button type="button" class="secondary" id="saveRoundTripConf">Save confirmation</button>
+            </div>
+          ` : `<div class="hint">Round trip off — edit each leg separately in JSON or turn this back on.</div>
+            <div class="actions"><a class="btn" href="${escapeHtml(book)}" target="_blank" rel="noopener">Book / manage Groome</a></div>`}
+        </div>`;
+
+      shuttleHtml += (trip.shuttles || []).map((s, idx) => {
+        const pickup = s.pickupAddress || "";
+        const u = uberUrl(pickup);
+        const m = mapsUrl(pickup);
+        const conf = rt && sharedConf ? sharedConf : (s.confirmation || "");
+        const status = rt && sharedConf ? "roundtrip" : s.status;
+        return `
+          <div class="card">
+            <div class="label">${escapeHtml(s.leg || "Shuttle")}${chip(status)}</div>
+            <div class="value">${escapeHtml(s.carrier || "Groome Transportation")}</div>
+            <div>${escapeHtml(s.when || (rt ? "Time TBD" : ""))}</div>
+            <div class="hint">${escapeHtml([s.route, conf && ("Conf " + conf), s.note].filter(Boolean).join(" · "))}</div>
+            ${pickup ? `<div class="mono" style="margin-top:6px">${escapeHtml(pickup)}</div>` : '<div class="hint">Add pickup address when known</div>'}
+            <div class="actions">
+              ${u ? `<a class="btn uber" href="${u}">Uber to pickup</a>` : ""}
+              ${m ? `<a class="btn maps" href="${m}">Maps</a>` : ""}
+              ${pickup ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(pickup)}">Copy pickup</button>` : ""}
+              ${conf ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(conf)}">Copy conf #</button>` : ""}
+            </div>
+          </div>`;
+      }).join("");
+
+      document.getElementById("shuttles").innerHTML = shuttleHtml;
+
+      const L = trip.lodging || {};
+      const uHotel = uberUrl(L.address);
+      const mHotel = mapsUrl(L.address);
+      document.getElementById("lodging").innerHTML = `
+        <div class="card">
+          <div class="label">Stay</div>
+          <div class="value">${escapeHtml(L.name || "Hotel TBD")}</div>
+          <div>${L.address ? escapeHtml(L.address) : '<span class="hint">Add address for Uber / Maps</span>'}</div>
+          <div class="hint">${escapeHtml([L.checkIn && ("In " + L.checkIn), L.checkOut && ("Out " + L.checkOut), L.confirmation && ("Conf " + L.confirmation)].filter(Boolean).join(" · "))}</div>
+          <div class="actions">
+            ${uHotel ? `<a class="btn uber" href="${uHotel}">Open in Uber</a>` : `<button type="button" class="secondary" disabled>Uber (need address)</button>`}
+            ${mHotel ? `<a class="btn maps" href="${mHotel}">Maps</a>` : ""}
+            ${L.address ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(L.address)}">Copy address</button>` : ""}
+          </div>
+        </div>`;
+
+      document.getElementById("sites").innerHTML = (trip.sites || []).map((s, i) => {
+        const u = uberUrl(s.address);
+        const m = mapsUrl(s.address);
+        return `
+          <div class="card">
+            <div class="value">${escapeHtml(s.name || "Site " + (i + 1))}</div>
+            <div>${s.address ? escapeHtml(s.address) : '<span class="hint">No address yet</span>'}</div>
+            ${s.note ? `<div class="hint">${escapeHtml(s.note)}</div>` : ""}
+            <div class="actions">
+              ${u ? `<a class="btn uber" href="${u}">Open in Uber</a>` : `<button type="button" class="secondary" disabled>Uber (need address)</button>`}
+              ${m ? `<a class="btn maps" href="${m}">Maps</a>` : ""}
+              ${s.address ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(s.address)}">Copy address</button>` : ""}
+            </div>
+          </div>`;
+      }).join("") || '<div class="card hint">No sites yet</div>';
+
+      document.getElementById("receipts").innerHTML = (trip.receipts || []).map((r) => `
+        <li>
+          <input type="checkbox" data-receipt="${escapeHtml(r.id)}" ${r.done ? "checked" : ""} />
+          <span>${escapeHtml(r.label)}${r.note ? `<br><span class="hint">${escapeHtml(r.note)}</span>` : ""}</span>
+        </li>
+      `).join("");
+
+      wireCopyButtons();
+
+      document.querySelectorAll("[data-receipt]").forEach((box) => {
+        box.onchange = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          const item = (t.receipts || []).find((x) => x.id === box.dataset.receipt);
+          if (item) item.done = box.checked;
+          saveStore(st);
+        };
+      });
+
+      const rtToggle = document.getElementById("roundTripToggle");
+      if (rtToggle) {
+        rtToggle.onchange = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          t.shuttleRoundTrip = rtToggle.checked;
+          applyRoundTrip(t);
+          saveStore(st);
+          render();
+        };
+      }
+      const saveRt = document.getElementById("saveRoundTripConf");
+      if (saveRt) {
+        saveRt.onclick = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          t.shuttleRoundTripConfirmation = (document.getElementById("roundTripConf").value || "").trim();
+          t.shuttleRoundTrip = true;
+          applyRoundTrip(t);
+          saveStore(st);
+          render();
+        };
+      }
+    }
+
+    document.getElementById("tripSelect").onchange = (e) => {
+      const st = loadStore();
+      st.activeId = e.target.value;
+      saveStore(st);
+      render();
+    };
+
+    document.getElementById("addTrip").onclick = () => {
+      const title = prompt("Name this trip", "New trip");
+      if (title == null) return;
+      const st = loadStore();
+      const trip = makeBlankTrip(title.trim() || "New trip");
+      st.trips.push(trip);
+      st.activeId = trip.id;
+      saveStore(st);
+      render();
+    };
+
+    document.getElementById("toggleEdit").onclick = () => {
+      const editing = document.body.classList.toggle("editing");
+      document.getElementById("toggleEdit").textContent = editing ? "Done" : "Edit trip";
+      document.getElementById("saveTrip").hidden = !editing;
+      document.getElementById("deleteTrip").hidden = !editing;
+      document.getElementById("resetTrip").hidden = !editing;
+      if (editing) {
+        const st = loadStore();
+        document.getElementById("editJson").value = JSON.stringify(activeTrip(st), null, 2);
+      } else render();
+    };
+
+    document.getElementById("saveTrip").onclick = () => {
+      try {
+        const st = loadStore();
+        const fromJson = normalizeTrip(JSON.parse(document.getElementById("editJson").value));
+        fromJson.title = document.getElementById("editTitle").value || fromJson.title;
+        fromJson.dates = document.getElementById("editDates").value || fromJson.dates;
+        fromJson.id = activeTrip(st).id;
+        const idx = st.trips.findIndex((t) => t.id === st.activeId);
+        st.trips[idx] = fromJson;
+        saveStore(st);
+        document.body.classList.remove("editing");
+        document.getElementById("toggleEdit").textContent = "Edit trip";
+        document.getElementById("saveTrip").hidden = true;
+        document.getElementById("deleteTrip").hidden = true;
+        document.getElementById("resetTrip").hidden = true;
+        render();
+      } catch (e) {
+        alert("JSON invalid: " + e.message);
+      }
+    };
+
+    document.getElementById("deleteTrip").onclick = () => {
+      const st = loadStore();
+      if (st.trips.length <= 1) {
+        alert("Keep at least one trip. Create another first, or use Reset demo.");
+        return;
+      }
+      const t = activeTrip(st);
+      if (!confirm(`Delete "${t.title}"?`)) return;
+      st.trips = st.trips.filter((x) => x.id !== t.id);
+      st.activeId = st.trips[0].id;
+      saveStore(st);
+      document.body.classList.remove("editing");
+      document.getElementById("toggleEdit").textContent = "Edit trip";
+      document.getElementById("saveTrip").hidden = true;
+      document.getElementById("deleteTrip").hidden = true;
+      document.getElementById("resetTrip").hidden = true;
+      render();
+    };
+
+    document.getElementById("resetTrip").onclick = () => {
+      if (!confirm("Replace all trips with the default OKC + Montréal trips?")) return;
+      saveStore(defaultStore());
+      document.body.classList.remove("editing");
+      document.getElementById("toggleEdit").textContent = "Edit trip";
+      document.getElementById("saveTrip").hidden = true;
+      document.getElementById("deleteTrip").hidden = true;
+      document.getElementById("resetTrip").hidden = true;
+      render();
+    };
+
+    document.getElementById("exportData").onclick = () => {
+      const store = loadStore();
+      const blob = new Blob([JSON.stringify(store, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "trip-manifest-backup.json";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    };
+
+    document.getElementById("importData").onclick = () => {
+      document.getElementById("importFile").click();
+    };
+
+    document.getElementById("importFile").onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          if (!data || !Array.isArray(data.trips) || !data.trips.length) {
+            alert("Import file needs a trips array.");
+            return;
+          }
+          data.trips = data.trips.map(normalizeTrip);
+          if (!data.trips.some((t) => t.id === data.activeId)) data.activeId = data.trips[0].id;
+          if (!confirm("Replace all trips on this device with the imported file?")) return;
+          saveStore(data);
+          render();
+        } catch (err) {
+          alert("Import failed: " + err.message);
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {});
+    }
+
+    try { applyPendingUpdates(); } catch (e) { console.warn("Update merge failed", e); }
+    document.getElementById("appVersion").textContent = "App " + APP_VERSION;
+    render();
+  </script>
+</body>
+</html>
