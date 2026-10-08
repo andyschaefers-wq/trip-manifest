@@ -122,7 +122,7 @@
 
   <div class="view-panel">
     <h1 id="tripTitle">OKC work trip</h1>
-    <p class="sub" id="tripDates">Oct 12–16, 2026 · from PDX (EUG preferred when close)</p>
+    <p class="sub" id="tripDates">Mon Oct 12 – Thu Oct 15, 2026 · PDX</p>
   </div>
 
   <div class="edit-panel">
@@ -158,7 +158,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v5</div>
+    <div id="appVersion">App v6</div>
   </footer>
 
   <script>
@@ -180,7 +180,7 @@
       };
     }
 
-    const APP_VERSION = "v5 · 2026-10-08";
+    const APP_VERSION = "v6 · 2026-10-08";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -335,6 +335,14 @@
     const OKC_OLD_DEFAULT_DATES = "Mon Oct 12 – Fri Oct 16, 2026 · PDX (check EUG)";
     const OKC_BOOKED_DATES = "Mon Oct 12 – Thu Oct 15, 2026 · PDX";
 
+    // OKC lodging + Groome defaults: old (pre-booking) seed text -> booked-itinerary text.
+    const OKC_LODGING_OLD = { checkIn: "Oct 12 or 13", checkOut: "Oct 15 or 16" };
+    const OKC_LODGING_NEW = { checkIn: "Mon Oct 12 (arrive ~10:00 PM)", checkOut: "Thu Oct 15" };
+    const OKC_SHUTTLE_NOTES = [
+      { old: "Home area → PDX or EUG", now: "Home area → PDX · flight departs 2:35 PM Mon Oct 12" },
+      { old: "PDX or EUG → Home area", now: "PDX → Home area · flight lands 10:45 PM Thu Oct 15" }
+    ];
+
     function findOkcTrip(store) {
       const trips = store.trips || [];
       return trips.find((t) => t.id === "okc-2026-10")
@@ -374,6 +382,24 @@
             yul.booking = yulBooking();
             markAirReceipt(yul, "Air Canada receipt received in travel inbox");
           }
+          return store;
+        }
+      },
+      {
+        id: "2026-10-08-okc-lodging-shuttle-pdx",
+        apply(store) {
+          // Only touch fields that still hold the old default text; never overwrite user edits.
+          const okc = findOkcTrip(store);
+          if (!okc) return store;
+          const L = okc.lodging;
+          if (L && typeof L === "object") {
+            if (L.checkIn === OKC_LODGING_OLD.checkIn) L.checkIn = OKC_LODGING_NEW.checkIn;
+            if (L.checkOut === OKC_LODGING_OLD.checkOut) L.checkOut = OKC_LODGING_NEW.checkOut;
+          }
+          (okc.shuttles || []).forEach((s) => {
+            const m = OKC_SHUTTLE_NOTES.find((x) => x.old === s.note);
+            if (m) s.note = m.now;
+          });
           return store;
         }
       }
@@ -420,14 +446,14 @@
         shuttleRoundTripConfirmation: "",
         shuttleRoundTripBookUrl: GROOME_URL,
         shuttles: [
-          emptyShuttle("To airport", "Home area → PDX or EUG"),
-          emptyShuttle("From airport", "PDX or EUG → Home area")
+          emptyShuttle("To airport", OKC_SHUTTLE_NOTES[0].now),
+          emptyShuttle("From airport", OKC_SHUTTLE_NOTES[1].now)
         ],
         lodging: {
           name: "Hotel TBD",
           address: "",
-          checkIn: "Oct 12 or 13",
-          checkOut: "Oct 15 or 16",
+          checkIn: OKC_LODGING_NEW.checkIn,
+          checkOut: OKC_LODGING_NEW.checkOut,
           confirmation: ""
         },
         sites: [
