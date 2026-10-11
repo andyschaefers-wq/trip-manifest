@@ -162,7 +162,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v8</div>
+    <div id="appVersion">App v9</div>
   </footer>
 
   <script>
@@ -184,7 +184,7 @@
       };
     }
 
-    const APP_VERSION = "v8 · 2026-10-11";
+    const APP_VERSION = "v9 · 2026-10-11";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -351,6 +351,31 @@
       note: "Pay at hotel; get folio at checkout for expenses"
     };
 
+    // ---- Groome OKC outbound (confirmation: add on phone; page is public) ----
+    const GROOME_PHONE = "(877) 693-3785";
+    const OKC_GROOME_PICKUP_ADDR = "2500 SW Western Blvd, Corvallis, OR 97331";
+    const OKC_GROOME_OUT = {
+      when: "Mon Oct 12, 2026 · 9:50 AM pickup",
+      route: "Corvallis – OSU Hilton Garden Inn → Portland PDX · Shared ride · 1 passenger",
+      note: "For Southwest WN 3314 departing 2:35 PM (Groome lists 2:50 PM) · $61.00 paid ($66 fare − $5 discount), Visa · Cancel/change by 11:59 PM Sun Oct 11, the day before (credit only, no refunds) · Conf: add on phone"
+    };
+    const OKC_GROOME_RETURN_NOTE = "PDX → Home area · flight lands 10:45 PM Thu Oct 15 · NOT BOOKED — book on Groome";
+    const OKC_SHUTTLE_RECEIPT_NOTE = "Outbound only (Corvallis → PDX Mon Oct 12) · received in travel inbox 9:43 AM PT Oct 11 · return leg not booked";
+
+    function okcGroomeOutbound() {
+      return Object.assign(emptyShuttle("To airport", OKC_GROOME_OUT.note), {
+        when: OKC_GROOME_OUT.when,
+        route: OKC_GROOME_OUT.route,
+        pickupAddress: OKC_GROOME_PICKUP_ADDR,
+        phone: GROOME_PHONE,
+        status: "booked"
+      });
+    }
+
+    function okcGroomeReturn() {
+      return Object.assign(emptyShuttle("From airport", OKC_GROOME_RETURN_NOTE), { status: "needs-booking" });
+    }
+
     function markReceipt(trip, id, note) {
       if (!Array.isArray(trip.receipts)) trip.receipts = standardReceipts();
       const r = trip.receipts.find((x) => x.id === id);
@@ -488,6 +513,45 @@
           }
           return store;
         }
+      },
+      {
+        id: "2026-10-11-okc-groome-outbound",
+        apply(store) {
+          // Outbound Groome (Corvallis → PDX Mon Oct 12) is booked; return (Thu Oct 15) is not.
+          const okc = findOkcTrip(store);
+          if (!okc) return store;
+          normalizeTrip(okc);
+          const blank = (v) => !v || !String(v).trim();
+          const sharedConf = String(okc.shuttleRoundTripConfirmation || "").trim();
+          // Round trip off so the outbound confirmation never fills the return leg.
+          okc.shuttleRoundTrip = false;
+          okc.shuttleRoundTripConfirmation = "";
+          let out = okc.shuttles.find((s) => /^to\s*airport/i.test(s.leg || "")) || okc.shuttles[0];
+          if (!out) { out = emptyShuttle("To airport"); okc.shuttles.unshift(out); }
+          let ret = okc.shuttles.find((s) => s !== out && /^from\s*airport/i.test(s.leg || ""))
+            || okc.shuttles.find((s) => s !== out);
+          if (!ret) { ret = okcGroomeReturn(); okc.shuttles.push(ret); }
+          const dfltOutNotes = ["", OKC_SHUTTLE_NOTES[0].old, OKC_SHUTTLE_NOTES[0].now, "Almost always Groome"];
+          out.carrier = out.carrier || "Groome Transportation";
+          out.bookUrl = out.bookUrl || GROOME_URL;
+          if (blank(out.when)) out.when = OKC_GROOME_OUT.when;
+          if (blank(out.route)) out.route = OKC_GROOME_OUT.route;
+          if (blank(out.pickupAddress)) out.pickupAddress = OKC_GROOME_PICKUP_ADDR;
+          if (dfltOutNotes.includes(String(out.note || "").trim())) out.note = OKC_GROOME_OUT.note;
+          if (blank(out.phone)) out.phone = GROOME_PHONE;
+          if (sharedConf && blank(out.confirmation)) out.confirmation = sharedConf;
+          if (out.confirmation == null) out.confirmation = "";
+          out.status = "booked";
+          // Return leg: strip a confirmation that only came from the old shared round-trip field.
+          if (sharedConf && String(ret.confirmation || "").trim() === sharedConf) ret.confirmation = "";
+          const dfltRetNotes = ["", OKC_SHUTTLE_NOTES[1].old, OKC_SHUTTLE_NOTES[1].now, "Linked when round trip is on"];
+          if (dfltRetNotes.includes(String(ret.note || "").trim())) ret.note = OKC_GROOME_RETURN_NOTE;
+          if (blank(ret.confirmation)) ret.status = "needs-booking";
+          ret.carrier = ret.carrier || "Groome Transportation";
+          ret.bookUrl = ret.bookUrl || GROOME_URL;
+          markReceipt(okc, "shuttle", OKC_SHUTTLE_RECEIPT_NOTE);
+          return store;
+        }
       }
     ];
 
@@ -528,13 +592,10 @@
         dates: OKC_BOOKED_DATES,
         booking: okcBooking(),
         flights: okcFlights(),
-        shuttleRoundTrip: true,
+        shuttleRoundTrip: false,
         shuttleRoundTripConfirmation: "",
         shuttleRoundTripBookUrl: GROOME_URL,
-        shuttles: [
-          emptyShuttle("To airport", OKC_SHUTTLE_NOTES[0].now),
-          emptyShuttle("From airport", OKC_SHUTTLE_NOTES[1].now)
-        ],
+        shuttles: [okcGroomeOutbound(), okcGroomeReturn()],
         rentals: [okcHertzRental()],
         lodging: {
           name: OKC_HOTEL.name,
@@ -554,6 +615,7 @@
         receipts: standardReceipts()
       };
       markReceipt(trip, "rental", "received in travel inbox Oct 8");
+      markReceipt(trip, "shuttle", OKC_SHUTTLE_RECEIPT_NOTE);
       return markAirReceipt(trip, "Southwest receipt received in travel inbox");
     }
 
@@ -670,6 +732,7 @@
       if (status === "booked") return '<span class="chip good">booked</span>';
       if (status === "choice") return '<span class="chip warn">pick return</span>';
       if (status === "roundtrip") return '<span class="chip good">round trip</span>';
+      if (status === "needs-booking") return '<span class="chip warn">needs booking</span>';
       return '<span class="chip">tentative</span>';
     }
 
@@ -779,6 +842,8 @@
               ${m ? `<a class="btn maps" href="${m}">Maps</a>` : ""}
               ${pickup ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(pickup)}">Copy pickup</button>` : ""}
               ${conf ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(conf)}">Copy conf #</button>` : ""}
+              ${s.phone ? `<a class="btn secondary" href="tel:${escapeHtml(String(s.phone).replace(/[^0-9+]/g, ""))}">Call ${escapeHtml(s.phone)}</a>` : ""}
+              ${s.status === "needs-booking" ? `<a class="btn" href="${escapeHtml(s.bookUrl || book)}" target="_blank" rel="noopener">Book on Groome</a>` : ""}
             </div>
           </div>`;
       }).join("");
