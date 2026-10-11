@@ -119,7 +119,6 @@
     <input type="file" id="importFile" accept="application/json,.json" hidden />
     <button type="button" id="saveTrip" class="secondary" hidden>Save</button>
     <button type="button" id="deleteTrip" class="danger" hidden>Delete trip</button>
-    <button type="button" id="resetTrip" class="secondary" hidden>Reset demo</button>
   </div>
 
   <div class="view-panel">
@@ -163,7 +162,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v7</div>
+    <div id="appVersion">App v8</div>
   </footer>
 
   <script>
@@ -185,7 +184,7 @@
       };
     }
 
-    const APP_VERSION = "v7 · 2026-10-11";
+    const APP_VERSION = "v8 · 2026-10-11";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -946,7 +945,6 @@
       document.getElementById("toggleEdit").textContent = editing ? "Done" : "Edit trip";
       document.getElementById("saveTrip").hidden = !editing;
       document.getElementById("deleteTrip").hidden = !editing;
-      document.getElementById("resetTrip").hidden = !editing;
       if (editing) {
         const st = loadStore();
         document.getElementById("editJson").value = JSON.stringify(activeTrip(st), null, 2);
@@ -967,7 +965,6 @@
         document.getElementById("toggleEdit").textContent = "Edit trip";
         document.getElementById("saveTrip").hidden = true;
         document.getElementById("deleteTrip").hidden = true;
-        document.getElementById("resetTrip").hidden = true;
         render();
       } catch (e) {
         alert("JSON invalid: " + e.message);
@@ -977,7 +974,7 @@
     document.getElementById("deleteTrip").onclick = () => {
       const st = loadStore();
       if (st.trips.length <= 1) {
-        alert("Keep at least one trip. Create another first, or use Reset demo.");
+        alert("Keep at least one trip. Create another first.");
         return;
       }
       const t = activeTrip(st);
@@ -989,18 +986,6 @@
       document.getElementById("toggleEdit").textContent = "Edit trip";
       document.getElementById("saveTrip").hidden = true;
       document.getElementById("deleteTrip").hidden = true;
-      document.getElementById("resetTrip").hidden = true;
-      render();
-    };
-
-    document.getElementById("resetTrip").onclick = () => {
-      if (!confirm("Replace all trips with the default OKC + Montréal trips?")) return;
-      saveStore(defaultStore());
-      document.body.classList.remove("editing");
-      document.getElementById("toggleEdit").textContent = "Edit trip";
-      document.getElementById("saveTrip").hidden = true;
-      document.getElementById("deleteTrip").hidden = true;
-      document.getElementById("resetTrip").hidden = true;
       render();
     };
 
