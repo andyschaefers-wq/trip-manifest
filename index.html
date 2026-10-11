@@ -102,6 +102,8 @@
     footer { margin-top: 24px; color: var(--muted); font-size: 0.8rem; }
     .toggle-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
     .toggle-row input { width: auto; margin: 0; }
+    .rental-edit { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+    .rental-edit label { display: block; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -138,6 +140,9 @@
   <h2>Airport shuttles</h2>
   <div id="shuttles"></div>
 
+  <h2>Rental car</h2>
+  <div id="rentals"></div>
+
   <h2>Lodging</h2>
   <div id="lodging"></div>
 
@@ -158,7 +163,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v6</div>
+    <div id="appVersion">App v7</div>
   </footer>
 
   <script>
@@ -180,7 +185,7 @@
       };
     }
 
-    const APP_VERSION = "v6 · 2026-10-08";
+    const APP_VERSION = "v7 · 2026-10-11";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -294,8 +299,64 @@
         { id: "air", label: "Airline confirmation / receipt", done: false },
         { id: "hotel", label: "Hotel receipt", done: false },
         { id: "shuttle", label: "Groome / airport shuttle receipt", done: false },
+        { id: "rental", label: "Rental car receipt", done: false },
         { id: "ground", label: "Ground / Uber if needed", done: false }
       ];
+    }
+
+    // ---- Rental cars (confirmation: add on phone; page is public) ----
+    const RENTAL_FIELDS = [
+      ["company", "Company"],
+      ["carClass", "Car class"],
+      ["pickupLocation", "Pickup location"],
+      ["pickupAddress", "Pickup address"],
+      ["pickupWhen", "Pickup date / time"],
+      ["returnLocation", "Return location"],
+      ["returnAddress", "Return address"],
+      ["returnWhen", "Return date / time"],
+      ["bookedVia", "Booked via"],
+      ["payment", "Prepaid / pay at counter"],
+      ["note", "Note"],
+      ["confirmation", "Confirmation # (stays on this phone)"]
+    ];
+
+    function emptyRental(company) {
+      const r = {};
+      RENTAL_FIELDS.forEach(([k]) => (r[k] = ""));
+      r.company = company || "Enterprise";
+      return r;
+    }
+
+    const OKC_AIRPORT = "Oklahoma City Will Rogers World Airport (OKC)";
+    const OKC_AIRPORT_ADDR = "7100 Terminal Dr, Oklahoma City, OK 73159";
+    function okcHertzRental() {
+      return Object.assign(emptyRental("Hertz"), {
+        carClass: "Compact (Chevy Trax or similar)",
+        pickupLocation: OKC_AIRPORT,
+        pickupAddress: OKC_AIRPORT_ADDR,
+        pickupWhen: "Mon Oct 12, 10:00 PM",
+        returnLocation: OKC_AIRPORT,
+        returnAddress: OKC_AIRPORT_ADDR,
+        returnWhen: "Thu Oct 15, 5:30 PM",
+        bookedVia: "Expedia",
+        payment: "Prepaid; non-cancellable",
+        note: "Flight lands 10:00 PM"
+      });
+    }
+
+    const OKC_HOTEL = {
+      name: "Hampton Inn Oklahoma City I-40 East (Tinker AFB)",
+      address: "1833 Warren Dr, Midwest City, OK 73110",
+      checkIn: "Mon Oct 12",
+      checkOut: "Thu Oct 15",
+      note: "Pay at hotel; get folio at checkout for expenses"
+    };
+
+    function markReceipt(trip, id, note) {
+      if (!Array.isArray(trip.receipts)) trip.receipts = standardReceipts();
+      const r = trip.receipts.find((x) => x.id === id);
+      if (r) { r.done = true; r.note = note; }
+      return trip;
     }
 
     function markAirReceipt(trip, note) {
@@ -324,6 +385,7 @@
           emptyShuttle("To airport", "Home area → PDX · flight departs 10:00 AM Sun Nov 29"),
           emptyShuttle("From airport", "PDX → Home area · flight lands 2:41 PM Fri Dec 4")
         ],
+        rentals: [],
         lodging: { name: "Hotel TBD", address: "", checkIn: "Nov 29", checkOut: "Dec 4", confirmation: "" },
         sites: [{ name: "Work site / customer", address: "", note: "Paste street address for one-tap Uber" }],
         receipts: standardReceipts()
@@ -402,6 +464,31 @@
           });
           return store;
         }
+      },
+      {
+        id: "2026-10-11-okc-hertz-rental-hotel",
+        apply(store) {
+          const okc = findOkcTrip(store);
+          if (!okc) return store;
+          normalizeTrip(okc);
+          if (!okc.rentals.some((r) => /hertz/i.test(r.company || ""))) okc.rentals.push(okcHertzRental());
+          markReceipt(okc, "rental", "received in travel inbox Oct 8");
+          // Hotel: fill only while lodging is still a placeholder; never overwrite typed values.
+          if (!okc.lodging || typeof okc.lodging !== "object") okc.lodging = {};
+          const L = okc.lodging;
+          const blank = (v) => !v || !String(v).trim();
+          if (blank(L.name) || /^hotel\s*tbd$|^tbd$/i.test(String(L.name).trim())) {
+            L.name = OKC_HOTEL.name;
+            if (blank(L.address)) L.address = OKC_HOTEL.address;
+            const dflIn = [OKC_LODGING_OLD.checkIn, OKC_LODGING_NEW.checkIn];
+            const dflOut = [OKC_LODGING_OLD.checkOut, OKC_LODGING_NEW.checkOut];
+            if (blank(L.checkIn) || dflIn.includes(L.checkIn)) L.checkIn = OKC_HOTEL.checkIn;
+            if (blank(L.checkOut) || dflOut.includes(L.checkOut)) L.checkOut = OKC_HOTEL.checkOut;
+            if (blank(L.note)) L.note = OKC_HOTEL.note;
+            if (L.confirmation == null) L.confirmation = "";
+          }
+          return store;
+        }
       }
     ];
 
@@ -449,11 +536,13 @@
           emptyShuttle("To airport", OKC_SHUTTLE_NOTES[0].now),
           emptyShuttle("From airport", OKC_SHUTTLE_NOTES[1].now)
         ],
+        rentals: [okcHertzRental()],
         lodging: {
-          name: "Hotel TBD",
-          address: "",
-          checkIn: OKC_LODGING_NEW.checkIn,
-          checkOut: OKC_LODGING_NEW.checkOut,
+          name: OKC_HOTEL.name,
+          address: OKC_HOTEL.address,
+          checkIn: OKC_HOTEL.checkIn,
+          checkOut: OKC_HOTEL.checkOut,
+          note: OKC_HOTEL.note,
           confirmation: ""
         },
         sites: [
@@ -465,6 +554,7 @@
         ],
         receipts: standardReceipts()
       };
+      markReceipt(trip, "rental", "received in travel inbox Oct 8");
       return markAirReceipt(trip, "Southwest receipt received in travel inbox");
     }
 
@@ -482,14 +572,10 @@
           emptyShuttle("To airport", "Almost always Groome"),
           emptyShuttle("From airport", "Linked when round trip is on")
         ],
+        rentals: [],
         lodging: { name: "Hotel TBD", address: "", checkIn: "", checkOut: "", confirmation: "" },
         sites: [{ name: "Work site / customer", address: "", note: "" }],
-        receipts: [
-          { id: "air", label: "Airline confirmation / receipt", done: false },
-          { id: "hotel", label: "Hotel receipt", done: false },
-          { id: "shuttle", label: "Groome / airport shuttle receipt", done: false },
-          { id: "ground", label: "Ground / Uber if needed", done: false }
-        ]
+        receipts: standardReceipts()
       };
     }
 
@@ -515,6 +601,13 @@
           done: false
         });
       }
+      if (!t.receipts.some((r) => r.id === "rental")) {
+        const gi = t.receipts.findIndex((r) => r.id === "ground");
+        const item = { id: "rental", label: "Rental car receipt", done: false };
+        if (gi >= 0) t.receipts.splice(gi, 0, item); else t.receipts.push(item);
+      }
+      if (!Array.isArray(t.rentals)) t.rentals = [];
+      t.rentals = t.rentals.map((r) => Object.assign(emptyRental(""), r && typeof r === "object" ? r : {}));
       applyRoundTrip(t);
       return t;
     }
@@ -693,6 +786,34 @@
 
       document.getElementById("shuttles").innerHTML = shuttleHtml;
 
+      document.getElementById("rentals").innerHTML = (trip.rentals || []).map((r, idx) => {
+        const u = uberUrl(r.pickupAddress);
+        const m = mapsUrl(r.pickupAddress);
+        const sameReturn = (r.returnLocation || "") === (r.pickupLocation || "") && (r.returnAddress || "") === (r.pickupAddress || "");
+        return `
+          <div class="card rental-card" data-rental-card="${idx}">
+            <div class="label">Rental car${r.confirmation ? chip("booked") : ""}</div>
+            <div class="value">${escapeHtml(r.company || "Rental")}${r.carClass ? " · " + escapeHtml(r.carClass) : ""}</div>
+            <div>Pickup: ${escapeHtml(r.pickupWhen || "time TBD")}${r.pickupLocation ? " · " + escapeHtml(r.pickupLocation) : ""}</div>
+            ${r.pickupAddress ? `<div class="mono" style="margin-top:4px">${escapeHtml(r.pickupAddress)}</div>` : '<div class="hint">Add pickup address for Uber / Maps</div>'}
+            <div style="margin-top:6px">Return: ${escapeHtml(r.returnWhen || "time TBD")}${sameReturn ? (r.pickupLocation ? " · same location" : "") : (r.returnLocation ? " · " + escapeHtml(r.returnLocation) : "")}</div>
+            ${!sameReturn && r.returnAddress ? `<div class="mono" style="margin-top:4px">${escapeHtml(r.returnAddress)}</div>` : ""}
+            <div class="hint">${escapeHtml([r.bookedVia && ("Booked via " + r.bookedVia), r.payment, r.confirmation ? ("Conf " + r.confirmation) : "Conf: add on phone"].filter(Boolean).join(" · "))}</div>
+            ${r.note ? `<div class="hint">${escapeHtml(r.note)}</div>` : ""}
+            <div class="actions">
+              ${m ? `<a class="btn maps" href="${m}">Maps to pickup</a>` : ""}
+              ${u ? `<a class="btn uber" href="${u}">Uber to pickup</a>` : ""}
+              ${r.confirmation ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(r.confirmation)}">Copy conf #</button>` : ""}
+            </div>
+            <div class="edit-panel rental-edit">
+              ${RENTAL_FIELDS.map(([k, lab]) => `<label class="label">${escapeHtml(lab)}<input data-rental-idx="${idx}" data-rental-field="${k}" value="${escapeHtml(r[k] || "")}" /></label>`).join("")}
+              <div class="actions"><button type="button" class="danger" data-rental-delete="${idx}">Delete rental</button></div>
+            </div>
+          </div>`;
+      }).join("") + `
+        ${(trip.rentals || []).length ? "" : '<div class="card hint view-panel">No rental car</div>'}
+        <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" id="addRental">Add rental</button></div></div>`;
+
       const L = trip.lodging || {};
       const uHotel = uberUrl(L.address);
       const mHotel = mapsUrl(L.address);
@@ -702,6 +823,7 @@
           <div class="value">${escapeHtml(L.name || "Hotel TBD")}</div>
           <div>${L.address ? escapeHtml(L.address) : '<span class="hint">Add address for Uber / Maps</span>'}</div>
           <div class="hint">${escapeHtml([L.checkIn && ("In " + L.checkIn), L.checkOut && ("Out " + L.checkOut), L.confirmation && ("Conf " + L.confirmation)].filter(Boolean).join(" · "))}</div>
+          ${L.note ? `<div class="hint">${escapeHtml(L.note)}</div>` : ""}
           <div class="actions">
             ${uHotel ? `<a class="btn uber" href="${uHotel}">Open in Uber</a>` : `<button type="button" class="secondary" disabled>Uber (need address)</button>`}
             ${mHotel ? `<a class="btn maps" href="${mHotel}">Maps</a>` : ""}
@@ -733,6 +855,38 @@
       `).join("");
 
       wireCopyButtons();
+
+      document.querySelectorAll("[data-rental-field]").forEach((inp) => {
+        inp.onchange = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          const r = (t.rentals || [])[Number(inp.dataset.rentalIdx)];
+          if (!r) return;
+          r[inp.dataset.rentalField] = inp.value.trim();
+          saveStore(st);
+          document.getElementById("editJson").value = JSON.stringify(t, null, 2);
+        };
+      });
+      document.querySelectorAll("[data-rental-delete]").forEach((btn) => {
+        btn.onclick = () => {
+          if (!confirm("Delete this rental car?")) return;
+          const st = loadStore();
+          const t = activeTrip(st);
+          t.rentals.splice(Number(btn.dataset.rentalDelete), 1);
+          saveStore(st);
+          render();
+        };
+      });
+      const addRental = document.getElementById("addRental");
+      if (addRental) {
+        addRental.onclick = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          t.rentals.push(emptyRental("Enterprise"));
+          saveStore(st);
+          render();
+        };
+      }
 
       document.querySelectorAll("[data-receipt]").forEach((box) => {
         box.onchange = () => {
