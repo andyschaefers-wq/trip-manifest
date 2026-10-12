@@ -104,6 +104,15 @@
     .toggle-row input { width: auto; margin: 0; }
     .rental-edit { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
     .rental-edit label { display: block; margin-top: 8px; }
+    .extras-line { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+    .extras-line:first-of-type { border-top: 0; margin-top: 4px; padding-top: 0; }
+    .extras-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .extras-item { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; }
+    .extras-item input[type=checkbox] { width: auto; margin: 4px 0 0; }
+    .extras-item .grow { flex: 1; min-width: 0; }
+    .extras-edit { margin: 4px 0 8px 28px; }
+    .extras-edit label { display: block; margin-top: 6px; }
+    .alert-card { background: #422006; border-color: #a16207; color: #fde68a; }
   </style>
 </head>
 <body>
@@ -125,6 +134,7 @@
     <h1 id="tripTitle">OKC work trip</h1>
     <p class="sub" id="tripDates">Mon Oct 12 – Thu Oct 15, 2026 · PDX</p>
   </div>
+  <div id="extrasAlert"></div>
 
   <div class="edit-panel">
     <label class="label">Trip title</label>
@@ -135,6 +145,9 @@
 
   <h2>Flights</h2>
   <div id="flights"></div>
+
+  <h2>Airline extras</h2>
+  <div id="extras"></div>
 
   <h2>Airport shuttles</h2>
   <div id="shuttles"></div>
@@ -162,7 +175,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v9</div>
+    <div id="appVersion">App v10</div>
   </footer>
 
   <script>
@@ -184,7 +197,7 @@
       };
     }
 
-    const APP_VERSION = "v9 · 2026-10-11";
+    const APP_VERSION = "v10 · 2026-10-12";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -410,11 +423,57 @@
           emptyShuttle("From airport", "PDX → Home area · flight lands 2:41 PM Fri Dec 4")
         ],
         rentals: [],
+        extras: emptyExtras(),
         lodging: { name: "Hotel TBD", address: "", checkIn: "Nov 29", checkOut: "Dec 4", confirmation: "" },
         sites: [{ name: "Work site / customer", address: "", note: "Paste street address for one-tap Uber" }],
         receipts: standardReceipts()
       };
       return markAirReceipt(trip, "Air Canada receipt received in travel inbox");
+    }
+
+    // ---- Airline extras: bag fees + seat fees per direction, meals per trip ----
+    const EXTRA_DIRS = [["outbound", "Outbound"], ["return", "Return"]];
+    const EXTRA_KINDS = [["bags", "Checked bag fee"], ["seats", "Seat fees"]];
+    const EXTRA_FIELDS = [["description", "Description"], ["amount", "Amount"], ["datePaid", "Date paid"], ["ref", "Confirmation / receipt #"], ["note", "Note"]];
+    function emptyExtras() {
+      return { outbound: { bags: [], seats: [] }, return: { bags: [], seats: [] }, meals: [] };
+    }
+    function emptyExtraItem(description) {
+      return { id: "x-" + Date.now() + "-" + Math.random().toString(16).slice(2, 6), description: description || "", amount: "", datePaid: "", ref: "", note: "", paid: true, receipt: false };
+    }
+    function normItems(a) {
+      return (Array.isArray(a) ? a : []).filter((x) => x && typeof x === "object").map((x) => {
+        const it = Object.assign(emptyExtraItem(""), x);
+        it.paid = x.paid !== false; it.receipt = !!x.receipt;
+        return it;
+      });
+    }
+    function normalizeExtras(e) {
+      const x = e && typeof e === "object" ? e : {};
+      const out = { outbound: {}, return: {}, meals: normItems(x.meals) };
+      EXTRA_DIRS.forEach(([d]) => {
+        const src = x[d] && typeof x[d] === "object" ? x[d] : {};
+        EXTRA_KINDS.forEach(([k]) => { out[d][k] = normItems(src[k]); });
+      });
+      Object.keys(x).forEach((k) => { if (!(k in out)) out[k] = x[k]; });
+      return out;
+    }
+    function extrasLine(extras, path) {
+      return path === "meals" ? extras.meals : extras[path.split(".")[0]][path.split(".")[1]];
+    }
+    function allExtraItems(extras) {
+      const all = extras.meals.slice();
+      EXTRA_DIRS.forEach(([d]) => EXTRA_KINDS.forEach(([k]) => all.push(...extras[d][k])));
+      return all;
+    }
+    function parseAmount(v) {
+      const n = parseFloat(String(v || "").replace(/[^0-9.\-]/g, ""));
+      return isFinite(n) ? n : 0;
+    }
+    function fmtMoney(n) { return "$" + n.toFixed(2); }
+    function lineTotal(items) { return items.reduce((s, it) => s + parseAmount(it.amount), 0); }
+    function missingReceipts(trip) {
+      return allExtraItems(normalizeExtras(trip.extras)).filter((it) => it.paid && !it.receipt);
     }
 
     // ---- One-time data updates, applied on load to data already saved on the phone ----
@@ -445,6 +504,23 @@
     }
 
     const UPDATES = [
+      {
+        id: "2026-10-12-okc-southwest-outbound-bag",
+        apply(store) {
+          const okc = findOkcTrip(store);
+          if (!okc) return store;
+          okc.extras = normalizeExtras(okc.extras);
+          const bags = okc.extras.outbound.bags;
+          if (!bags.some((b) => /southwest/i.test(b.description || ""))) {
+            const it = emptyExtraItem("Southwest checked bag, outbound");
+            it.datePaid = "Mon Oct 12";
+            it.receipt = true;
+            it.note = "receipt in travel inbox Oct 12";
+            bags.push(it);
+          }
+          return store;
+        }
+      },
       {
         id: "2026-09-28-booked-okc-yul",
         apply(store) {
@@ -634,6 +710,7 @@
           emptyShuttle("From airport", "Linked when round trip is on")
         ],
         rentals: [],
+        extras: emptyExtras(),
         lodging: { name: "Hotel TBD", address: "", checkIn: "", checkOut: "", confirmation: "" },
         sites: [{ name: "Work site / customer", address: "", note: "" }],
         receipts: standardReceipts()
@@ -669,6 +746,7 @@
       }
       if (!Array.isArray(t.rentals)) t.rentals = [];
       t.rentals = t.rentals.map((r) => Object.assign(emptyRental(""), r && typeof r === "object" ? r : {}));
+      t.extras = normalizeExtras(t.extras);
       applyRoundTrip(t);
       return t;
     }
@@ -747,7 +825,7 @@
     function renderTripSelect(store) {
       const sel = document.getElementById("tripSelect");
       sel.innerHTML = store.trips.map((t) =>
-        `<option value="${escapeHtml(t.id)}" ${t.id === store.activeId ? "selected" : ""}>${escapeHtml(t.title || "Untitled")}</option>`
+        `<option value="${escapeHtml(t.id)}" ${t.id === store.activeId ? "selected" : ""}>${escapeHtml(t.title || "Untitled")}${missingReceipts(t).length ? " ⚠" : ""}</option>`
       ).join("");
     }
 
@@ -800,6 +878,42 @@
           <div class="hint">${escapeHtml(f.detail || "")}</div>
         </div>
       `).join("") || '<div class="card hint">No flights yet</div>');
+
+      const ex = trip.extras = normalizeExtras(trip.extras);
+      const miss = missingReceipts(trip);
+      document.getElementById("extrasAlert").innerHTML = miss.length ? `
+        <div class="card alert-card" id="extrasMissing">
+          <div class="value">⚠ ${miss.length} airline extra${miss.length > 1 ? "s" : ""} paid — receipt not received</div>
+          <div class="hint" style="color:#fde68a">${escapeHtml(miss.map((it) => it.description || "Untitled extra").join(" · "))}</div>
+        </div>` : "";
+      const lineHtml = (path, title) => {
+        const items = extrasLine(ex, path);
+        const total = lineTotal(items);
+        return `
+          <div class="extras-line" data-extras-line="${path}">
+            <div class="extras-head"><span class="label">${escapeHtml(title)}</span><span class="mono" data-extras-total="${path}">${items.length ? "Total " + fmtMoney(total) : ""}</span></div>
+            ${items.map((it, i) => `
+              <div class="extras-item">
+                <input type="checkbox" title="Receipt received" data-extras-receipt="${path}" data-extras-idx="${i}" ${it.receipt ? "checked" : ""} />
+                <div class="grow">
+                  <div>${escapeHtml(it.description || "Untitled")}${it.amount ? " · " + escapeHtml(it.amount) : ""}${it.paid && !it.receipt ? '<span class="chip warn">receipt missing</span>' : (it.receipt ? '<span class="chip good">receipt</span>' : "")}</div>
+                  <div class="hint" style="margin-top:2px">${escapeHtml([it.datePaid && ("Paid " + it.datePaid), it.ref && ("Ref " + it.ref), it.note].filter(Boolean).join(" · "))}</div>
+                </div>
+              </div>
+              <div class="edit-panel extras-edit">
+                ${EXTRA_FIELDS.map(([k, lab]) => `<label class="label">${escapeHtml(lab)}<input data-extras-field="${k}" data-extras-path="${path}" data-extras-idx="${i}" value="${escapeHtml(it[k] || "")}" /></label>`).join("")}
+                <div class="toggle-row"><input type="checkbox" data-extras-paid="${path}" data-extras-idx="${i}" ${it.paid ? "checked" : ""} /><span class="label">Paid</span></div>
+                <div class="actions"><button type="button" class="danger" data-extras-delete="${path}" data-extras-idx="${i}">Delete item</button></div>
+              </div>`).join("") || '<div class="hint view-panel">None</div>'}
+            <div class="edit-panel"><div class="actions" style="margin-top:6px"><button type="button" class="secondary" data-extras-add="${path}">Add ${escapeHtml(title.toLowerCase())}</button></div></div>
+          </div>`;
+      };
+      document.getElementById("extras").innerHTML = EXTRA_DIRS.map(([d, dl]) => `
+        <div class="card"><div class="value">${dl} flights</div>
+          ${EXTRA_KINDS.map(([k, kl]) => lineHtml(d + "." + k, kl)).join("")}
+        </div>`).join("") + `
+        <div class="card"><div class="value">Airline meals</div>${lineHtml("meals", "Airline meals")}</div>
+        <p class="hint" style="margin-top:-4px">Check the box when the receipt reaches your travel inbox. Amounts and refs stay on this phone.</p>`;
 
       const rt = !!trip.shuttleRoundTrip;
       const sharedConf = trip.shuttleRoundTripConfirmation || "";
@@ -941,6 +1055,38 @@
           render();
         };
       });
+      const withItem = (el, fn) => {
+        const st = loadStore();
+        const t = activeTrip(st);
+        t.extras = normalizeExtras(t.extras);
+        const path = el.dataset.extrasPath || el.dataset.extrasReceipt || el.dataset.extrasPaid || el.dataset.extrasDelete || el.dataset.extrasAdd;
+        const line = extrasLine(t.extras, path);
+        fn(line, Number(el.dataset.extrasIdx), t);
+        saveStore(st);
+      };
+      document.querySelectorAll("[data-extras-field]").forEach((inp) => {
+        inp.onchange = () => {
+          withItem(inp, (line, i, t) => { if (line[i]) line[i][inp.dataset.extrasField] = inp.value.trim(); document.getElementById("editJson").value = JSON.stringify(t, null, 2); });
+          render();
+        };
+      });
+      document.querySelectorAll("[data-extras-receipt]").forEach((box) => {
+        box.onchange = () => { withItem(box, (line, i) => { if (line[i]) line[i].receipt = box.checked; }); render(); };
+      });
+      document.querySelectorAll("[data-extras-paid]").forEach((box) => {
+        box.onchange = () => { withItem(box, (line, i) => { if (line[i]) line[i].paid = box.checked; }); render(); };
+      });
+      document.querySelectorAll("[data-extras-delete]").forEach((btn) => {
+        btn.onclick = () => {
+          if (!confirm("Delete this item?")) return;
+          withItem(btn, (line, i) => line.splice(i, 1));
+          render();
+        };
+      });
+      document.querySelectorAll("[data-extras-add]").forEach((btn) => {
+        btn.onclick = () => { withItem(btn, (line) => line.push(emptyExtraItem(""))); render(); };
+      });
+
       const addRental = document.getElementById("addRental");
       if (addRental) {
         addRental.onclick = () => {
