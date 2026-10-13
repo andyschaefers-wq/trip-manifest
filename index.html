@@ -204,7 +204,7 @@
       };
     }
 
-    const APP_VERSION = "v12 · 2026-10-12";
+    const APP_VERSION = "v13 · 2026-10-13";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -348,6 +348,10 @@
 
     const OKC_AIRPORT = "Oklahoma City Will Rogers World Airport (OKC)";
     const OKC_AIRPORT_ADDR = "7100 Terminal Dr, Oklahoma City, OK 73159";
+    const OKC_HERTZ_FACILITY = "Hertz – OKC Consolidated Rental Car Facility";
+    const OKC_HERTZ_FACILITY_ADDR = "5201 S Meridian Ave, Oklahoma City, OK 73119";
+    const OKC_HERTZ_NOTE_OLD = "Flight lands 10:00 PM";
+    const OKC_HERTZ_NOTE = "Flight lands 10:00 PM. Return: follow 'Rental Car Return' signs on the airport approach; facility is ~1 mile from the terminal; 24-hour shuttle back to the terminal. Return by 5:30 PM Thu Oct 15 (flight WN 3232, 7:20 PM).";
     function rentalReturnAddr(r) {
       const ra = (r.returnAddress || "").trim();
       if (ra && !/^same( location)?$/i.test(ra)) return ra;
@@ -374,15 +378,15 @@
     function okcHertzRental() {
       return Object.assign(emptyRental("Hertz"), {
         carClass: "Compact (Chevy Trax or similar)",
-        pickupLocation: OKC_AIRPORT,
-        pickupAddress: OKC_AIRPORT_ADDR,
+        pickupLocation: OKC_HERTZ_FACILITY,
+        pickupAddress: OKC_HERTZ_FACILITY_ADDR,
         pickupWhen: "Mon Oct 12, 10:00 PM",
-        returnLocation: OKC_AIRPORT,
-        returnAddress: OKC_AIRPORT_ADDR,
+        returnLocation: OKC_HERTZ_FACILITY,
+        returnAddress: OKC_HERTZ_FACILITY_ADDR,
         returnWhen: "Thu Oct 15, 5:30 PM",
         bookedVia: "Expedia",
         payment: "Prepaid; non-cancellable",
-        note: "Flight lands 10:00 PM"
+        note: OKC_HERTZ_NOTE
       });
     }
 
@@ -534,6 +538,22 @@
     }
 
     const UPDATES = [
+      {
+        id: "2026-10-13-okc-hertz-return-address",
+        apply(store) {
+          // Move Hertz pickup/return from the terminal to the consolidated rental facility; only fields still at the old default.
+          const okc = findOkcTrip(store);
+          if (!okc || !Array.isArray(okc.rentals)) return store;
+          okc.rentals.filter((r) => /hertz/i.test(r.company || "")).forEach((r) => {
+            if (r.pickupLocation === OKC_AIRPORT) r.pickupLocation = OKC_HERTZ_FACILITY;
+            if (r.pickupAddress === OKC_AIRPORT_ADDR) r.pickupAddress = OKC_HERTZ_FACILITY_ADDR;
+            if (r.returnLocation === OKC_AIRPORT) r.returnLocation = OKC_HERTZ_FACILITY;
+            if (r.returnAddress === OKC_AIRPORT_ADDR) r.returnAddress = OKC_HERTZ_FACILITY_ADDR;
+            if (r.note === OKC_HERTZ_NOTE_OLD) r.note = OKC_HERTZ_NOTE;
+          });
+          return store;
+        }
+      },
       {
         id: "2026-10-12-okc-southwest-outbound-bag",
         apply(store) {
