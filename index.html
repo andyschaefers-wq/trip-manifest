@@ -102,6 +102,10 @@
     footer { margin-top: 24px; color: var(--muted); font-size: 0.8rem; }
     .toggle-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
     .toggle-row input { width: auto; margin: 0; }
+    .access-tag { display: inline-block; font-weight: 700; padding: 4px 10px; border-radius: 999px; margin-bottom: 6px; }
+    .access-tag.ok { background: #052e16; color: #86efac; }
+    .access-tag.warn { background: #422006; color: #fcd34d; border: 1px solid #f59e0b; }
+    .rental-edit select { width: 100%; }
     .rental-edit { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
     .rental-edit label { display: block; margin-top: 8px; }
     .extras-line { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
@@ -204,7 +208,7 @@
       };
     }
 
-    const APP_VERSION = "v13 · 2026-10-13";
+    const APP_VERSION = "v14 · 2026-10-13";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -335,10 +339,26 @@
       ["returnWhen", "Return date / time"],
       ["bookedVia", "Booked via"],
       ["payment", "Prepaid / pay at counter"],
+      ["accessType", "How to get there (access type)"],
+      ["accessNote", "Access note (shuttle location, hours, travel time)"],
       ["note", "Note"],
       ["confirmation", "Confirmation # (stays on this phone)"]
     ];
 
+    const RENTAL_ACCESS = [
+      ["terminal", "In terminal / walk", false],
+      ["consolidated", "Shuttle to consolidated facility", false],
+      ["offsite", "Off-site vendor shuttle", true],
+      ["unverified", "Unverified", true]
+    ];
+    function rentalAccess(r) {
+      return RENTAL_ACCESS.find(([k]) => k === (r.accessType || "")) || RENTAL_ACCESS[3];
+    }
+    function accessTagHtml(r) {
+      const [, lab, warn] = rentalAccess(r);
+      return `<div class="access-tag ${warn ? "warn" : "ok"}">🚐 How to get there: ${escapeHtml(lab)}</div>`;
+    }
+    const OKC_HERTZ_ACCESS_NOTE = "From baggage claim follow Ground Transportation signs to the rental car shuttle; facility ~1 mile from terminal; shuttle runs 24 hours. Return: follow Rental Car Return signs, then shuttle back to terminal; allow extra time.";
     function emptyRental(company) {
       const r = {};
       RENTAL_FIELDS.forEach(([k]) => (r[k] = ""));
@@ -386,7 +406,9 @@
         returnWhen: "Thu Oct 15, 5:30 PM",
         bookedVia: "Expedia",
         payment: "Prepaid; non-cancellable",
-        note: OKC_HERTZ_NOTE
+        note: OKC_HERTZ_NOTE,
+        accessType: "consolidated",
+        accessNote: OKC_HERTZ_ACCESS_NOTE
       });
     }
 
@@ -538,6 +560,19 @@
     }
 
     const UPDATES = [
+      {
+        id: "2026-10-13-rental-access-field",
+        apply(store) {
+          // Fill OKC Hertz access type/note only when empty.
+          const okc = findOkcTrip(store);
+          if (!okc || !Array.isArray(okc.rentals)) return store;
+          okc.rentals.filter((r) => /hertz/i.test(r.company || "")).forEach((r) => {
+            if (!String(r.accessType || "").trim()) r.accessType = "consolidated";
+            if (!String(r.accessNote || "").trim()) r.accessNote = OKC_HERTZ_ACCESS_NOTE;
+          });
+          return store;
+        }
+      },
       {
         id: "2026-10-13-okc-hertz-return-address",
         apply(store) {
@@ -1045,6 +1080,8 @@
         const sameReturn = (r.returnLocation || "") === (r.pickupLocation || "") && (r.returnAddress || "") === (r.pickupAddress || "");
         const sum = `${r.company || "Rental"} · return ${r.returnWhen || "TBD"}`;
         return cardWrap(trip, "r:" + r._id, `<div class="label">Rental car${r.confirmation ? chip("booked") : ""}</div>`, sum, `
+            ${accessTagHtml(r)}
+            ${r.accessNote ? `<div class="hint access-note">${escapeHtml(r.accessNote)}</div>` : ""}
             <div class="value">${escapeHtml(r.company || "Rental")}${r.carClass ? " · " + escapeHtml(r.carClass) : ""}</div>
             <div>Pickup: ${escapeHtml(r.pickupWhen || "time TBD")}${r.pickupLocation ? " · " + escapeHtml(r.pickupLocation) : ""}</div>
             ${r.pickupAddress ? `<div class="mono" style="margin-top:4px">${escapeHtml(r.pickupAddress)}</div>` : '<div class="hint">Add pickup address for Uber / Maps</div>'}
@@ -1059,7 +1096,9 @@
             </div>
             ${gasHtml(r)}
             <div class="edit-panel rental-edit">
-              ${RENTAL_FIELDS.map(([k, lab]) => `<label class="label">${escapeHtml(lab)}<input data-rental-idx="${idx}" data-rental-field="${k}" value="${escapeHtml(r[k] || "")}" /></label>`).join("")}
+              ${RENTAL_FIELDS.map(([k, lab]) => k === "accessType"
+                ? `<label class="label">${escapeHtml(lab)}<select data-rental-idx="${idx}" data-rental-field="${k}">${RENTAL_ACCESS.map(([v, l]) => `<option value="${v}"${rentalAccess(r)[0] === v ? " selected" : ""}>${escapeHtml(l)}</option>`).join("")}</select></label>`
+                : `<label class="label">${escapeHtml(lab)}<input data-rental-idx="${idx}" data-rental-field="${k}" value="${escapeHtml(r[k] || "")}" /></label>`).join("")}
               <div class="actions"><button type="button" class="danger" data-rental-delete="${idx}">Delete rental</button></div>
             </div>`, { ref: "rental:" + r._id, name: (r.company || "Rental") + " rental car" }, "rental-card");
       }).join("") + `
@@ -1216,7 +1255,7 @@
         addRental.onclick = () => {
           const st = loadStore();
           const t = activeTrip(st);
-          t.rentals.push(emptyRental("Enterprise"));
+          t.rentals.push(Object.assign(emptyRental("Enterprise"), { accessType: "unverified" }));
           saveStore(st);
           render();
         };
