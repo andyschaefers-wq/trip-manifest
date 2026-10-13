@@ -112,6 +112,15 @@
     .extras-item .grow { flex: 1; min-width: 0; }
     .extras-edit { margin: 4px 0 8px 28px; }
     .extras-edit label { display: block; margin-top: 6px; }
+    .card-head { display: flex; align-items: flex-start; gap: 6px; }
+    .card-head .grow, .extras-head .grow { flex: 1; min-width: 0; }
+    .icon-btn { min-width: 44px; min-height: 44px; padding: 0; justify-content: center; border-radius: 12px; background: #334155; font-size: 1.1rem; margin: -6px -4px 0 0; flex: none; }
+    .icon-btn.rm { background: #3f1d1d; color: #fca5a5; }
+    .extras-item .icon-btn { margin: 0; }
+    .extras-head .icon-btn { margin: 0; }
+    .min-sum { font-size: 0.95rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .minimized > .card-body { display: none; }
+    .card.minimized { padding: 10px 14px; }
     .alert-card { background: #422006; border-color: #a16207; color: #fde68a; }
   </style>
 </head>
@@ -162,10 +171,8 @@
   <div id="sites"></div>
 
   <h2>Receipts</h2>
-  <div class="card">
-    <p class="hint" style="margin-top:0">Confirm mail to your travel inbox (add confirmations on phone — this page is public).</p>
-    <ul class="check" id="receipts"></ul>
-  </div>
+  <div id="bookingCard"></div>
+  <div id="receiptsCard"></div>
 
   <div class="edit-panel card">
     <h2 style="margin-top:0">Raw trip JSON</h2>
@@ -175,7 +182,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v10</div>
+    <div id="appVersion">App v11</div>
   </footer>
 
   <script>
@@ -197,7 +204,7 @@
       };
     }
 
-    const APP_VERSION = "v10 · 2026-10-12";
+    const APP_VERSION = "v11 · 2026-10-12";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -722,10 +729,11 @@
       return { activeId: okc.id, trips: [okc, makeYulTrip()] };
     }
 
+    const ID_ADDED = { n: 0 };
     function normalizeTrip(trip) {
       const t = trip && typeof trip === "object" ? trip : makeBlankTrip();
       if (!t.id) t.id = "trip-" + Date.now() + "-" + Math.random().toString(16).slice(2, 6);
-      if (!Array.isArray(t.shuttles) || t.shuttles.length === 0) {
+      if (!Array.isArray(t.shuttles)) {
         t.shuttles = [emptyShuttle("To airport"), emptyShuttle("From airport")];
       }
       if (typeof t.shuttleRoundTrip !== "boolean") t.shuttleRoundTrip = true;
@@ -747,6 +755,14 @@
       if (!Array.isArray(t.rentals)) t.rentals = [];
       t.rentals = t.rentals.map((r) => Object.assign(emptyRental(""), r && typeof r === "object" ? r : {}));
       t.extras = normalizeExtras(t.extras);
+      if (!Array.isArray(t.flights)) t.flights = [];
+      if (!Array.isArray(t.sites)) t.sites = [];
+      ["flights", "shuttles", "rentals", "sites"].forEach((k) => {
+        t[k] = t[k].filter((x) => x && typeof x === "object");
+        t[k].forEach((x) => { if (!x._id) { x._id = k[0] + Math.random().toString(36).slice(2, 9); ID_ADDED.n++; } });
+      });
+      if (!t.ui || typeof t.ui !== "object") t.ui = { collapsed: {} };
+      if (!t.ui.collapsed || typeof t.ui.collapsed !== "object") t.ui.collapsed = {};
       applyRoundTrip(t);
       return t;
     }
@@ -771,7 +787,9 @@
         const raw = localStorage.getItem(STORE_KEY);
         if (raw) {
           const store = JSON.parse(raw);
+          ID_ADDED.n = 0;
           store.trips = (store.trips || []).map(normalizeTrip);
+          if (ID_ADDED.n) saveStore(store); // stable ids for minimize/remove
           if (!store.trips.length) return defaultStore();
           if (!store.trips.some((t) => t.id === store.activeId)) store.activeId = store.trips[0].id;
           return store;
@@ -845,6 +863,20 @@
       });
     }
 
+    function isMin(trip, key) { return !!(trip.ui && trip.ui.collapsed && trip.ui.collapsed[key]); }
+    function cardWrap(trip, key, titleHtml, summary, bodyHtml, rm, cls) {
+      const m = isMin(trip, key);
+      return `
+        <div class="card ${cls || ""}${m ? " minimized" : ""}" data-card="${escapeHtml(key)}">
+          <div class="card-head">
+            <div class="grow">${titleHtml}${m ? `<div class="min-sum">${escapeHtml(summary)}</div>` : ""}</div>
+            <button type="button" class="icon-btn" data-min="${escapeHtml(key)}" aria-expanded="${!m}" aria-label="${m ? "Expand" : "Minimize"}" title="${m ? "Expand" : "Minimize"}">${m ? "▸" : "▾"}</button>
+            ${rm ? `<button type="button" class="icon-btn rm" data-remove="${escapeHtml(rm.ref)}" data-remove-name="${escapeHtml(rm.name)}" aria-label="Remove" title="Remove">✕</button>` : ""}
+          </div>
+          <div class="card-body">${bodyHtml}</div>
+        </div>`;
+    }
+
     function render() {
       const store = loadStore();
       const trip = activeTrip(store);
@@ -858,26 +890,24 @@
       document.getElementById("editJson").value = JSON.stringify(trip, null, 2);
 
       const B = trip.booking;
-      const bookingHtml = B && (B.airline || B.confirmation || B.ticket) ? `
-        <div class="card">
-          <div class="label">Booking${chip("booked")}</div>
+      document.getElementById("bookingCard").innerHTML = B && (B.airline || B.confirmation || B.ticket) ? cardWrap(trip, "booking",
+        `<div class="label">Airfare booking${chip("booked")}</div>`,
+        `${B.airline || "Airline"} · ${B.confirmation ? "Conf " + B.confirmation : "airfare"}${(trip.receipts || []).some((r) => r.id === "air" && r.done) ? " · receipt ✓" : ""}`, `
           <div class="value">${escapeHtml(B.airline || "Airline")} · Conf <span class="mono">${escapeHtml(B.confirmation || "add on phone")}</span></div>
           <div class="hint">${escapeHtml([B.ticket ? ("Ticket " + B.ticket) : "Ticket: add on phone", B.total && ("Total " + B.total), B.fare].filter(Boolean).join(" · "))}</div>
           ${B.note ? `<div class="hint">${escapeHtml(B.note)}</div>` : ""}
           <div class="actions">
             ${B.confirmation ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(B.confirmation)}">Copy conf #</button>` : ""}
             ${B.ticket ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(B.ticket)}">Copy ticket #</button>` : ""}
-          </div>
-        </div>` : "";
+          </div>`, { ref: "booking", name: (B.airline || "Airline") + " booking card" }) : "";
 
-      document.getElementById("flights").innerHTML = bookingHtml + ((trip.flights || []).map((f) => `
-        <div class="card">
-          <div class="label">${escapeHtml(f.leg || "Flight")}${chip(f.status)}</div>
+      document.getElementById("flights").innerHTML = (trip.flights || []).map((f) => {
+        const sum = [f.flight || f.summary, f.from && f.to ? f.from + "→" + f.to : "", (f.when || "").split("·")[0].trim()].filter(Boolean).join(" ");
+        return cardWrap(trip, "f:" + f._id, `<div class="label">${escapeHtml(f.leg || "Flight")}${chip(f.status)}</div>`, sum, `
           <div class="value">${escapeHtml(f.summary || "")}</div>
           <div>${escapeHtml(f.when || "")}</div>
-          <div class="hint">${escapeHtml(f.detail || "")}</div>
-        </div>
-      `).join("") || '<div class="card hint">No flights yet</div>');
+          <div class="hint">${escapeHtml(f.detail || "")}</div>`, { ref: "flight:" + f._id, name: "flight " + sum });
+      }).join("") || '<div class="card hint">No flights</div>';
 
       const ex = trip.extras = normalizeExtras(trip.extras);
       const miss = missingReceipts(trip);
@@ -889,9 +919,13 @@
       const lineHtml = (path, title) => {
         const items = extrasLine(ex, path);
         const total = lineTotal(items);
+        const key = "x:" + path;
+        const m = isMin(trip, key);
         return `
-          <div class="extras-line" data-extras-line="${path}">
-            <div class="extras-head"><span class="label">${escapeHtml(title)}</span><span class="mono" data-extras-total="${path}">${items.length ? "Total " + fmtMoney(total) : ""}</span></div>
+          <div class="extras-line${m ? " minimized" : ""}" data-extras-line="${path}" data-card="${key}">
+            <div class="extras-head"><span class="label grow">${escapeHtml(title)}${m ? ` · ${items.length} item${items.length === 1 ? "" : "s"}` : ""}</span><span class="mono" data-extras-total="${path}">${items.length ? "Total " + fmtMoney(total) : ""}</span>
+              <button type="button" class="icon-btn" data-min="${key}" aria-expanded="${!m}" aria-label="${m ? "Expand" : "Minimize"}">${m ? "▸" : "▾"}</button></div>
+            <div class="card-body">
             ${items.map((it, i) => `
               <div class="extras-item">
                 <input type="checkbox" title="Receipt received" data-extras-receipt="${path}" data-extras-idx="${i}" ${it.receipt ? "checked" : ""} />
@@ -899,6 +933,7 @@
                   <div>${escapeHtml(it.description || "Untitled")}${it.amount ? " · " + escapeHtml(it.amount) : ""}${it.paid && !it.receipt ? '<span class="chip warn">receipt missing</span>' : (it.receipt ? '<span class="chip good">receipt</span>' : "")}</div>
                   <div class="hint" style="margin-top:2px">${escapeHtml([it.datePaid && ("Paid " + it.datePaid), it.ref && ("Ref " + it.ref), it.note].filter(Boolean).join(" · "))}</div>
                 </div>
+                <button type="button" class="icon-btn rm" data-remove="extra:${path}:${escapeHtml(it.id)}" data-remove-name="${escapeHtml((it.description || "Untitled") + " (" + title + ")")}" aria-label="Remove" title="Remove">✕</button>
               </div>
               <div class="edit-panel extras-edit">
                 ${EXTRA_FIELDS.map(([k, lab]) => `<label class="label">${escapeHtml(lab)}<input data-extras-field="${k}" data-extras-path="${path}" data-extras-idx="${i}" value="${escapeHtml(it[k] || "")}" /></label>`).join("")}
@@ -906,22 +941,21 @@
                 <div class="actions"><button type="button" class="danger" data-extras-delete="${path}" data-extras-idx="${i}">Delete item</button></div>
               </div>`).join("") || '<div class="hint view-panel">None</div>'}
             <div class="edit-panel"><div class="actions" style="margin-top:6px"><button type="button" class="secondary" data-extras-add="${path}">Add ${escapeHtml(title.toLowerCase())}</button></div></div>
+            </div>
           </div>`;
       };
-      document.getElementById("extras").innerHTML = EXTRA_DIRS.map(([d, dl]) => `
-        <div class="card"><div class="value">${dl} flights</div>
-          ${EXTRA_KINDS.map(([k, kl]) => lineHtml(d + "." + k, kl)).join("")}
-        </div>`).join("") + `
-        <div class="card"><div class="value">Airline meals</div>${lineHtml("meals", "Airline meals")}</div>
+      const exSum = (items) => items.length + " item" + (items.length === 1 ? "" : "s") + (items.length ? " · " + fmtMoney(lineTotal(items)) : "");
+      document.getElementById("extras").innerHTML = EXTRA_DIRS.map(([d, dl]) => cardWrap(trip, "xc:" + d,
+          `<div class="value">${dl} flights</div>`, `Bags ${exSum(ex[d].bags)} · Seats ${exSum(ex[d].seats)}`,
+          EXTRA_KINDS.map(([k, kl]) => lineHtml(d + "." + k, kl)).join(""))).join("")
+        + cardWrap(trip, "xc:meals", `<div class="value">Airline meals</div>`, exSum(ex.meals), lineHtml("meals", "Airline meals")) + `
         <p class="hint" style="margin-top:-4px">Check the box when the receipt reaches your travel inbox. Amounts and refs stay on this phone.</p>`;
 
       const rt = !!trip.shuttleRoundTrip;
       const sharedConf = trip.shuttleRoundTripConfirmation || "";
       const book = trip.shuttleRoundTripBookUrl || GROOME_URL;
 
-      let shuttleHtml = `
-        <div class="card">
-          <div class="value">Groome booking</div>
+      let shuttleHtml = cardWrap(trip, "groome", `<div class="value">Groome booking</div>`, rt ? "Round trip" + (sharedConf ? " · booked" : "") : "Legs booked separately", `
           <div class="toggle-row">
             <input type="checkbox" id="roundTripToggle" ${rt ? "checked" : ""} />
             <label for="roundTripToggle">Round trip — one confirmation for both legs</label>
@@ -935,18 +969,16 @@
               <button type="button" class="secondary" id="saveRoundTripConf">Save confirmation</button>
             </div>
           ` : `<div class="hint">Round trip off — edit each leg separately in JSON or turn this back on.</div>
-            <div class="actions"><a class="btn" href="${escapeHtml(book)}" target="_blank" rel="noopener">Book / manage Groome</a></div>`}
-        </div>`;
+            <div class="actions"><a class="btn" href="${escapeHtml(book)}" target="_blank" rel="noopener">Book / manage Groome</a></div>`}`);
 
-      shuttleHtml += (trip.shuttles || []).map((s, idx) => {
+      shuttleHtml += (trip.shuttles || []).map((s) => {
         const pickup = s.pickupAddress || "";
         const u = uberUrl(pickup);
         const m = mapsUrl(pickup);
         const conf = rt && sharedConf ? sharedConf : (s.confirmation || "");
         const status = rt && sharedConf ? "roundtrip" : s.status;
-        return `
-          <div class="card">
-            <div class="label">${escapeHtml(s.leg || "Shuttle")}${chip(status)}</div>
+        const sum = [s.carrier || "Groome", (s.leg || "Shuttle").toLowerCase(), s.when || (s.status === "needs-booking" ? "needs booking" : "time TBD")].join(" · ");
+        return cardWrap(trip, "s:" + s._id, `<div class="label">${escapeHtml(s.leg || "Shuttle")}${chip(status)}</div>`, sum, `
             <div class="value">${escapeHtml(s.carrier || "Groome Transportation")}</div>
             <div>${escapeHtml(s.when || (rt ? "Time TBD" : ""))}</div>
             <div class="hint">${escapeHtml([s.route, conf && ("Conf " + conf), s.note].filter(Boolean).join(" · "))}</div>
@@ -958,9 +990,9 @@
               ${conf ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(conf)}">Copy conf #</button>` : ""}
               ${s.phone ? `<a class="btn secondary" href="tel:${escapeHtml(String(s.phone).replace(/[^0-9+]/g, ""))}">Call ${escapeHtml(s.phone)}</a>` : ""}
               ${s.status === "needs-booking" ? `<a class="btn" href="${escapeHtml(s.bookUrl || book)}" target="_blank" rel="noopener">Book on Groome</a>` : ""}
-            </div>
-          </div>`;
-      }).join("");
+            </div>`, { ref: "shuttle:" + s._id, name: "shuttle " + (s.leg || "") + " (" + (s.carrier || "Groome") + ")" });
+      }).join("") + `${(trip.shuttles || []).length ? "" : '<div class="card hint view-panel">No shuttle legs</div>'}
+        <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" class="secondary" id="addShuttle">Add shuttle leg</button></div></div>`;
 
       document.getElementById("shuttles").innerHTML = shuttleHtml;
 
@@ -968,9 +1000,8 @@
         const u = uberUrl(r.pickupAddress);
         const m = mapsUrl(r.pickupAddress);
         const sameReturn = (r.returnLocation || "") === (r.pickupLocation || "") && (r.returnAddress || "") === (r.pickupAddress || "");
-        return `
-          <div class="card rental-card" data-rental-card="${idx}">
-            <div class="label">Rental car${r.confirmation ? chip("booked") : ""}</div>
+        const sum = `${r.company || "Rental"} · return ${r.returnWhen || "TBD"}`;
+        return cardWrap(trip, "r:" + r._id, `<div class="label">Rental car${r.confirmation ? chip("booked") : ""}</div>`, sum, `
             <div class="value">${escapeHtml(r.company || "Rental")}${r.carClass ? " · " + escapeHtml(r.carClass) : ""}</div>
             <div>Pickup: ${escapeHtml(r.pickupWhen || "time TBD")}${r.pickupLocation ? " · " + escapeHtml(r.pickupLocation) : ""}</div>
             ${r.pickupAddress ? `<div class="mono" style="margin-top:4px">${escapeHtml(r.pickupAddress)}</div>` : '<div class="hint">Add pickup address for Uber / Maps</div>'}
@@ -986,18 +1017,17 @@
             <div class="edit-panel rental-edit">
               ${RENTAL_FIELDS.map(([k, lab]) => `<label class="label">${escapeHtml(lab)}<input data-rental-idx="${idx}" data-rental-field="${k}" value="${escapeHtml(r[k] || "")}" /></label>`).join("")}
               <div class="actions"><button type="button" class="danger" data-rental-delete="${idx}">Delete rental</button></div>
-            </div>
-          </div>`;
+            </div>`, { ref: "rental:" + r._id, name: (r.company || "Rental") + " rental car" }, "rental-card");
       }).join("") + `
         ${(trip.rentals || []).length ? "" : '<div class="card hint view-panel">No rental car</div>'}
         <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" id="addRental">Add rental</button></div></div>`;
 
-      const L = trip.lodging || {};
-      const uHotel = uberUrl(L.address);
-      const mHotel = mapsUrl(L.address);
-      document.getElementById("lodging").innerHTML = `
-        <div class="card">
-          <div class="label">Stay</div>
+      const L = trip.lodging;
+      if (L && typeof L === "object") {
+        const uHotel = uberUrl(L.address);
+        const mHotel = mapsUrl(L.address);
+        document.getElementById("lodging").innerHTML = cardWrap(trip, "lodging", `<div class="label">Stay</div>`,
+          [L.name || "Hotel TBD", L.checkOut && ("out " + L.checkOut)].filter(Boolean).join(" · "), `
           <div class="value">${escapeHtml(L.name || "Hotel TBD")}</div>
           <div>${L.address ? escapeHtml(L.address) : '<span class="hint">Add address for Uber / Maps</span>'}</div>
           <div class="hint">${escapeHtml([L.checkIn && ("In " + L.checkIn), L.checkOut && ("Out " + L.checkOut), L.confirmation && ("Conf " + L.confirmation)].filter(Boolean).join(" · "))}</div>
@@ -1006,33 +1036,83 @@
             ${uHotel ? `<a class="btn uber" href="${uHotel}">Open in Uber</a>` : `<button type="button" class="secondary" disabled>Uber (need address)</button>`}
             ${mHotel ? `<a class="btn maps" href="${mHotel}">Maps</a>` : ""}
             ${L.address ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(L.address)}">Copy address</button>` : ""}
-          </div>
-        </div>`;
+          </div>`, { ref: "lodging", name: "lodging " + (L.name || "Hotel TBD") });
+      } else {
+        document.getElementById("lodging").innerHTML = `<div class="card hint view-panel">No lodging</div>
+          <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" class="secondary" id="addLodging">Add lodging</button></div></div>`;
+      }
 
       document.getElementById("sites").innerHTML = (trip.sites || []).map((s, i) => {
         const u = uberUrl(s.address);
         const m = mapsUrl(s.address);
-        return `
-          <div class="card">
-            <div class="value">${escapeHtml(s.name || "Site " + (i + 1))}</div>
+        const name = s.name || "Site " + (i + 1);
+        return cardWrap(trip, "site:" + s._id, `<div class="value">${escapeHtml(name)}</div>`, s.address || "no address yet", `
             <div>${s.address ? escapeHtml(s.address) : '<span class="hint">No address yet</span>'}</div>
             ${s.note ? `<div class="hint">${escapeHtml(s.note)}</div>` : ""}
             <div class="actions">
               ${u ? `<a class="btn uber" href="${u}">Open in Uber</a>` : `<button type="button" class="secondary" disabled>Uber (need address)</button>`}
               ${m ? `<a class="btn maps" href="${m}">Maps</a>` : ""}
               ${s.address ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(s.address)}">Copy address</button>` : ""}
-            </div>
-          </div>`;
-      }).join("") || '<div class="card hint">No sites yet</div>';
+            </div>`, { ref: "site:" + s._id, name: "site " + name });
+      }).join("") + `${(trip.sites || []).length ? "" : '<div class="card hint view-panel">No sites</div>'}
+        <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" class="secondary" id="addSite">Add site</button></div></div>`;
 
-      document.getElementById("receipts").innerHTML = (trip.receipts || []).map((r) => `
+      const rc = trip.receipts || [];
+      document.getElementById("receiptsCard").innerHTML = cardWrap(trip, "receipts", `<div class="value">Receipt checklist</div>`,
+        `${rc.filter((r) => r.done).length} of ${rc.length} received`, `
+        <p class="hint" style="margin-top:0">Confirm mail to your travel inbox (add confirmations on phone — this page is public).</p>
+        <ul class="check" id="receipts">${rc.map((r) => `
         <li>
           <input type="checkbox" data-receipt="${escapeHtml(r.id)}" ${r.done ? "checked" : ""} />
           <span>${escapeHtml(r.label)}${r.note ? `<br><span class="hint">${escapeHtml(r.note)}</span>` : ""}</span>
-        </li>
-      `).join("");
+        </li>`).join("")}</ul>`);
 
       wireCopyButtons();
+
+      document.querySelectorAll("[data-min]").forEach((btn) => {
+        btn.onclick = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          t.ui = t.ui && typeof t.ui === "object" ? t.ui : {};
+          t.ui.collapsed = t.ui.collapsed && typeof t.ui.collapsed === "object" ? t.ui.collapsed : {};
+          const k = btn.dataset.min;
+          if (t.ui.collapsed[k]) delete t.ui.collapsed[k]; else t.ui.collapsed[k] = true;
+          saveStore(st);
+          render();
+        };
+      });
+      document.querySelectorAll("[data-remove]").forEach((btn) => {
+        btn.onclick = () => {
+          if (!confirm(`Remove ${btn.dataset.removeName} from this trip?`)) return;
+          const st = loadStore();
+          const t = activeTrip(st);
+          const ref = btn.dataset.remove;
+          const [kind, a, b] = ref.split(":");
+          const drop = (arr, id) => (arr || []).filter((x) => x._id !== id);
+          if (kind === "flight") t.flights = drop(t.flights, a);
+          else if (kind === "shuttle") t.shuttles = drop(t.shuttles, a);
+          else if (kind === "rental") t.rentals = drop(t.rentals, a);
+          else if (kind === "site") t.sites = drop(t.sites, a);
+          else if (kind === "lodging") t.lodging = null;
+          else if (kind === "booking") t.booking = null;
+          else if (kind === "extra") {
+            t.extras = normalizeExtras(t.extras);
+            const line = extrasLine(t.extras, a);
+            const i = line.findIndex((x) => x.id === b);
+            if (i >= 0) line.splice(i, 1);
+          }
+          if (t.ui && t.ui.collapsed) {
+            const key = { flight: "f:", shuttle: "s:", rental: "r:", site: "site:" }[kind];
+            if (key) delete t.ui.collapsed[key + a]; else if (kind === "lodging" || kind === "booking") delete t.ui.collapsed[kind];
+          }
+          saveStore(st);
+          render();
+        };
+      });
+      const addBtn = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = () => { const st = loadStore(); const t = activeTrip(st); fn(t); normalizeTrip(t); saveStore(st); render(); }; };
+      addBtn("addShuttle", (t) => t.shuttles.push(emptyShuttle(t.shuttles.length ? "From airport" : "To airport")));
+      addBtn("addSite", (t) => t.sites.push({ name: "Work site / customer", address: "", note: "" }));
+      addBtn("addLodging", (t) => { t.lodging = { name: "Hotel TBD", address: "", checkIn: "", checkOut: "", confirmation: "" }; });
 
       document.querySelectorAll("[data-rental-field]").forEach((inp) => {
         inp.onchange = () => {
