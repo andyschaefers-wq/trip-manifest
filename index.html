@@ -182,7 +182,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v11</div>
+    <div id="appVersion">App v12</div>
   </footer>
 
   <script>
@@ -204,7 +204,7 @@
       };
     }
 
-    const APP_VERSION = "v11 · 2026-10-12";
+    const APP_VERSION = "v12 · 2026-10-12";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -348,6 +348,29 @@
 
     const OKC_AIRPORT = "Oklahoma City Will Rogers World Airport (OKC)";
     const OKC_AIRPORT_ADDR = "7100 Terminal Dr, Oklahoma City, OK 73159";
+    function rentalReturnAddr(r) {
+      const ra = (r.returnAddress || "").trim();
+      if (ra && !/^same( location)?$/i.test(ra)) return ra;
+      return (r.pickupAddress || "").trim();
+    }
+    function gasUrls(r) {
+      const a = rentalReturnAddr(r);
+      if (!a) return null;
+      const e = encodeURIComponent;
+      return {
+        route: "https://www.google.com/maps/dir/?api=1&destination=" + e(a) + "&waypoints=" + e("gas station near " + a) + "&travelmode=driving",
+        search: "https://www.google.com/maps/search/?api=1&query=" + e("gas station near " + a)
+      };
+    }
+    function gasHtml(r) {
+      const g = gasUrls(r);
+      if (!g) return "";
+      return `<div class="hint" style="margin-top:8px">⛽ Refuel within 5 miles of the return</div>
+            <div class="actions gas-actions">
+              <a class="btn maps gas-route" href="${g.route}" target="_blank" rel="noopener">Gas before return</a>
+              <a class="btn secondary gas-map" href="${g.search}" target="_blank" rel="noopener">Gas near return (map)</a>
+            </div>`;
+    }
     function okcHertzRental() {
       return Object.assign(emptyRental("Hertz"), {
         carClass: "Compact (Chevy Trax or similar)",
@@ -1014,6 +1037,7 @@
               ${u ? `<a class="btn uber" href="${u}">Uber to pickup</a>` : ""}
               ${r.confirmation ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(r.confirmation)}">Copy conf #</button>` : ""}
             </div>
+            ${gasHtml(r)}
             <div class="edit-panel rental-edit">
               ${RENTAL_FIELDS.map(([k, lab]) => `<label class="label">${escapeHtml(lab)}<input data-rental-idx="${idx}" data-rental-field="${k}" value="${escapeHtml(r[k] || "")}" /></label>`).join("")}
               <div class="actions"><button type="button" class="danger" data-rental-delete="${idx}">Delete rental</button></div>
