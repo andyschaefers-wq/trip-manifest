@@ -186,7 +186,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v12</div>
+    <div id="appVersion">App v15</div>
   </footer>
 
   <script>
@@ -208,7 +208,7 @@
       };
     }
 
-    const APP_VERSION = "v14 · 2026-10-13";
+    const APP_VERSION = "v15 · 2026-10-14";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -370,8 +370,10 @@
     const OKC_AIRPORT_ADDR = "7100 Terminal Dr, Oklahoma City, OK 73159";
     const OKC_HERTZ_FACILITY = "Hertz – OKC Consolidated Rental Car Facility";
     const OKC_HERTZ_FACILITY_ADDR = "5201 S Meridian Ave, Oklahoma City, OK 73119";
+    const OKC_HERTZ_RETURN_LOC = "OKC Consolidated Rental Car Facility (Hertz)";
     const OKC_HERTZ_NOTE_OLD = "Flight lands 10:00 PM";
     const OKC_HERTZ_NOTE = "Flight lands 10:00 PM. Return: follow 'Rental Car Return' signs on the airport approach; facility is ~1 mile from the terminal; 24-hour shuttle back to the terminal. Return by 5:30 PM Thu Oct 15 (flight WN 3232, 7:20 PM).";
+    const OKC_HERTZ_RETURN_NOTE = "Follow purple Rental Car Return signs";
     function rentalReturnAddr(r) {
       const ra = (r.returnAddress || "").trim();
       if (ra && !/^same( location)?$/i.test(ra)) return ra;
@@ -401,12 +403,12 @@
         pickupLocation: OKC_HERTZ_FACILITY,
         pickupAddress: OKC_HERTZ_FACILITY_ADDR,
         pickupWhen: "Mon Oct 12, 10:00 PM",
-        returnLocation: OKC_HERTZ_FACILITY,
+        returnLocation: OKC_HERTZ_RETURN_LOC,
         returnAddress: OKC_HERTZ_FACILITY_ADDR,
         returnWhen: "Thu Oct 15, 5:30 PM",
         bookedVia: "Expedia",
         payment: "Prepaid; non-cancellable",
-        note: OKC_HERTZ_NOTE,
+        note: OKC_HERTZ_RETURN_NOTE,
         accessType: "consolidated",
         accessNote: OKC_HERTZ_ACCESS_NOTE
       });
@@ -560,6 +562,27 @@
     }
 
     const UPDATES = [
+      {
+        id: "2026-10-14-okc-hertz-return-facility",
+        apply(store) {
+          // Return location/address only: blank, "same location", or old terminal default.
+          // Never re-add a removed Hertz rental; leave pickup and returnWhen alone.
+          const okc = findOkcTrip(store);
+          if (!okc || !Array.isArray(okc.rentals)) return store;
+          const isDefaultReturnAddr = (a) => {
+            const t = String(a || "").trim();
+            return !t || /^same( location)?$/i.test(t) || t === OKC_AIRPORT_ADDR;
+          };
+          okc.rentals.filter((r) => /hertz/i.test(r.company || "")).forEach((r) => {
+            if (!isDefaultReturnAddr(r.returnAddress)) return;
+            r.returnLocation = OKC_HERTZ_RETURN_LOC;
+            r.returnAddress = OKC_HERTZ_FACILITY_ADDR;
+            const n = String(r.note || "").trim();
+            if (!n || n === OKC_HERTZ_NOTE_OLD || n === OKC_HERTZ_NOTE) r.note = OKC_HERTZ_RETURN_NOTE;
+          });
+          return store;
+        }
+      },
       {
         id: "2026-10-13-rental-access-field",
         apply(store) {
