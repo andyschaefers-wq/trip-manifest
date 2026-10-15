@@ -186,7 +186,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v15</div>
+    <div id="appVersion">App v16</div>
   </footer>
 
   <script>
@@ -208,7 +208,7 @@
       };
     }
 
-    const APP_VERSION = "v15 · 2026-10-14";
+    const APP_VERSION = "v16 · 2026-10-14";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -431,7 +431,14 @@
       note: "For Southwest WN 3314 departing 2:35 PM (Groome lists 2:50 PM) · $61.00 paid ($66 fare − $5 discount), Visa · Cancel/change by 11:59 PM Sun Oct 11, the day before (credit only, no refunds) · Conf: add on phone"
     };
     const OKC_GROOME_RETURN_NOTE = "PDX → Home area · flight lands 10:45 PM Thu Oct 15 · NOT BOOKED — book on Groome";
-    const OKC_SHUTTLE_RECEIPT_NOTE = "Outbound only (Corvallis → PDX Mon Oct 12) · received in travel inbox 9:43 AM PT Oct 11 · return leg not booked";
+    const OKC_GROOME_RET = {
+      when: "Fri Oct 16, 2026 · 1:00 AM pickup at PDX (after Southwest WN 1778 lands 10:45 PM Thu Oct 15)",
+      route: "Portland PDX → Corvallis – OSU Hilton Garden Inn, 2500 SW Western Blvd, Corvallis, OR 97331 · Shared ride · 1 passenger",
+      pickupAddress: "PDX Island 2 · Scheduled Airporter sign by the Information Booth",
+      note: "Where: from baggage claim, exit the door nearest carousel 10, cross to Island 2; shuttle stops by the Information Booth under the 'Scheduled Airporter' sign · $61.00 paid ($66 fare − $5 discount), Visa · Cancel/change by 11:59 PM the day before (credit only, no refunds) · Conf: add on phone"
+    };
+    const OKC_SHUTTLE_RECEIPT_NOTE_OLD = "Outbound only (Corvallis → PDX Mon Oct 12) · received in travel inbox 9:43 AM PT Oct 11 · return leg not booked";
+    const OKC_SHUTTLE_RECEIPT_NOTE = "Both legs received in travel inbox · outbound (Corvallis → PDX Mon Oct 12) 9:43 AM PT Oct 11 · return (PDX → Corvallis Fri Oct 16) 3:26 PM PT Oct 14";
 
     function okcGroomeOutbound() {
       return Object.assign(emptyShuttle("To airport", OKC_GROOME_OUT.note), {
@@ -444,7 +451,13 @@
     }
 
     function okcGroomeReturn() {
-      return Object.assign(emptyShuttle("From airport", OKC_GROOME_RETURN_NOTE), { status: "needs-booking" });
+      return Object.assign(emptyShuttle("From airport", OKC_GROOME_RET.note), {
+        when: OKC_GROOME_RET.when,
+        route: OKC_GROOME_RET.route,
+        pickupAddress: OKC_GROOME_RET.pickupAddress,
+        phone: GROOME_PHONE,
+        status: "booked"
+      });
     }
 
     function markReceipt(trip, id, note) {
@@ -733,7 +746,34 @@
           if (blank(ret.confirmation)) ret.status = "needs-booking";
           ret.carrier = ret.carrier || "Groome Transportation";
           ret.bookUrl = ret.bookUrl || GROOME_URL;
-          markReceipt(okc, "shuttle", OKC_SHUTTLE_RECEIPT_NOTE);
+          markReceipt(okc, "shuttle", OKC_SHUTTLE_RECEIPT_NOTE_OLD);
+          return store;
+        }
+      },
+      {
+        id: "2026-10-14-okc-groome-return",
+        apply(store) {
+          // Return Groome (PDX → Corvallis, 1:00 AM Fri Oct 16) is booked. Only fill default/blank values.
+          const okc = findOkcTrip(store);
+          if (!okc) return store;
+          normalizeTrip(okc);
+          const blank = (v) => !v || !String(v).trim();
+          const out = okc.shuttles.find((s) => /^to\s*airport/i.test(s.leg || "")) || okc.shuttles[0];
+          let ret = okc.shuttles.find((s) => s !== out && /^from\s*airport/i.test(s.leg || ""))
+            || okc.shuttles.find((s) => s !== out);
+          if (!ret) { ret = okcGroomeReturn(); okc.shuttles.push(ret); }
+          const dfltRetNotes = ["", OKC_SHUTTLE_NOTES[1].old, OKC_SHUTTLE_NOTES[1].now, "Linked when round trip is on", OKC_GROOME_RETURN_NOTE];
+          ret.carrier = ret.carrier || "Groome Transportation";
+          ret.bookUrl = ret.bookUrl || GROOME_URL;
+          if (blank(ret.when)) ret.when = OKC_GROOME_RET.when;
+          if (blank(ret.route)) ret.route = OKC_GROOME_RET.route;
+          if (blank(ret.pickupAddress)) ret.pickupAddress = OKC_GROOME_RET.pickupAddress;
+          if (dfltRetNotes.includes(String(ret.note || "").trim())) ret.note = OKC_GROOME_RET.note;
+          if (blank(ret.phone)) ret.phone = GROOME_PHONE;
+          if (ret.confirmation == null) ret.confirmation = "";
+          ret.status = "booked";
+          const r = (okc.receipts || []).find((x) => x.id === "shuttle");
+          if (!r || blank(r.note) || r.note === OKC_SHUTTLE_RECEIPT_NOTE_OLD) markReceipt(okc, "shuttle", OKC_SHUTTLE_RECEIPT_NOTE);
           return store;
         }
       }
