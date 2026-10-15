@@ -108,6 +108,7 @@
     .rental-edit select { width: 100%; }
     .rental-edit { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
     .rental-edit label { display: block; margin-top: 8px; }
+    .site-edit input { width: 100%; box-sizing: border-box; min-height: 48px; font-size: 17px; padding: 10px; }
     .extras-line { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
     .extras-line:first-of-type { border-top: 0; margin-top: 4px; padding-top: 0; }
     .extras-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -186,7 +187,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v16</div>
+    <div id="appVersion">App v17</div>
   </footer>
 
   <script>
@@ -208,7 +209,7 @@
       };
     }
 
-    const APP_VERSION = "v16 · 2026-10-14";
+    const APP_VERSION = "v17 · 2026-10-14";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -1199,6 +1200,11 @@
               ${u ? `<a class="btn uber" href="${u}">Open in Uber</a>` : `<button type="button" class="secondary" disabled>Uber (need address)</button>`}
               ${m ? `<a class="btn maps" href="${m}">Maps</a>` : ""}
               ${s.address ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(s.address)}">Copy address</button>` : ""}
+            </div>
+            <div class="edit-panel rental-edit site-edit">
+              <label class="label">Name<input type="text" data-site-idx="${i}" data-site-field="name" value="${escapeHtml(s.name || "")}" autocomplete="off" /></label>
+              <label class="label">Address<input type="text" class="site-address-input" data-site-idx="${i}" data-site-field="address" value="${escapeHtml(s.address || "")}" placeholder="Paste street address" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" /></label>
+              <label class="label">Note<input type="text" data-site-idx="${i}" data-site-field="note" value="${escapeHtml(s.note || "")}" autocomplete="off" /></label>
             </div>`, { ref: "site:" + s._id, name: "site " + name });
       }).join("") + `${(trip.sites || []).length ? "" : '<div class="card hint view-panel">No sites</div>'}
         <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" class="secondary" id="addSite">Add site</button></div></div>`;
@@ -1270,6 +1276,19 @@
           saveStore(st);
           document.getElementById("editJson").value = JSON.stringify(t, null, 2);
         };
+      });
+      document.querySelectorAll("[data-site-field]").forEach((inp) => {
+        const saveSite = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          const site = (t.sites || [])[Number(inp.dataset.siteIdx)];
+          if (!site) return;
+          site[inp.dataset.siteField] = inp.value.trim();
+          saveStore(st);
+          document.getElementById("editJson").value = JSON.stringify(t, null, 2);
+        };
+        inp.oninput = saveSite;
+        inp.onchange = () => { saveSite(); render(); };
       });
       document.querySelectorAll("[data-rental-delete]").forEach((btn) => {
         btn.onclick = () => {
