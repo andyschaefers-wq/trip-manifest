@@ -187,7 +187,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v17</div>
+    <div id="appVersion">App v18</div>
   </footer>
 
   <script>
@@ -209,7 +209,7 @@
       };
     }
 
-    const APP_VERSION = "v17 · 2026-10-14";
+    const APP_VERSION = "v18 · 2026-10-15";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -246,21 +246,21 @@
         },
         {
           leg: "Return 1/2 · Thu Oct 15",
-          summary: "Southwest WN 3232 · OKC → DEN",
-          when: "Thu Oct 15 · 7:20 PM – 8:05 PM",
-          detail: "Change planes in DEN (50m) · Seat 15C Preferred",
+          summary: "Southwest WN 3243 · OKC → PHX",
+          when: "Thu Oct 15 · 9:15 PM CT – ~9:30 PM MST",
+          detail: "Change planes in PHX · Rebooked by Southwest Oct 15; seats may have changed",
           status: "booked",
-          airline: "Southwest", flight: "WN 3232", from: "OKC", to: "DEN",
-          date: "2026-10-15", depart: "19:20", arrive: "20:05", seat: "15C (Preferred)"
+          airline: "Southwest", flight: "WN 3243", from: "OKC", to: "PHX",
+          date: "2026-10-15", depart: "21:15", arrive: "21:30", seat: "Check app (seats may have changed)"
         },
         {
           leg: "Return 2/2 · Thu Oct 15",
-          summary: "Southwest WN 1778 · DEN → PDX",
-          when: "Thu Oct 15 · 8:55 PM – 10:45 PM",
-          detail: "Arrive Portland · Seat 20C Standard · Total travel 5h 25m",
+          summary: "Southwest WN 3452 · PHX → PDX",
+          when: "Thu Oct 15 · 10:35 PM MST – ~1:25 AM PDT Fri Oct 16",
+          detail: "Arrive Portland ~1:25 AM Fri · Rebooked by Southwest Oct 15; seats may have changed",
           status: "booked",
-          airline: "Southwest", flight: "WN 1778", from: "DEN", to: "PDX",
-          date: "2026-10-15", depart: "20:55", arrive: "22:45", seat: "20C (Standard)"
+          airline: "Southwest", flight: "WN 3452", from: "PHX", to: "PDX",
+          date: "2026-10-15", depart: "22:35", arrive: "01:25", seat: "Check app (seats may have changed)"
         }
       ];
     }
@@ -432,11 +432,13 @@
       note: "For Southwest WN 3314 departing 2:35 PM (Groome lists 2:50 PM) · $61.00 paid ($66 fare − $5 discount), Visa · Cancel/change by 11:59 PM Sun Oct 11, the day before (credit only, no refunds) · Conf: add on phone"
     };
     const OKC_GROOME_RETURN_NOTE = "PDX → Home area · flight lands 10:45 PM Thu Oct 15 · NOT BOOKED — book on Groome";
+    const OKC_GROOME_RET_WHEN_V16 = "Fri Oct 16, 2026 · 1:00 AM pickup at PDX (after Southwest WN 1778 lands 10:45 PM Thu Oct 15)";
+    const OKC_GROOME_RET_NOTE_V16 = "Where: from baggage claim, exit the door nearest carousel 10, cross to Island 2; shuttle stops by the Information Booth under the 'Scheduled Airporter' sign · $61.00 paid ($66 fare − $5 discount), Visa · Cancel/change by 11:59 PM the day before (credit only, no refunds) · Conf: add on phone";
     const OKC_GROOME_RET = {
-      when: "Fri Oct 16, 2026 · 1:00 AM pickup at PDX (after Southwest WN 1778 lands 10:45 PM Thu Oct 15)",
+      when: "Fri Oct 16, 2026 · 5:30 AM pickup at PDX (after Southwest WN 3452 lands ~1:25 AM)",
       route: "Portland PDX → Corvallis – OSU Hilton Garden Inn, 2500 SW Western Blvd, Corvallis, OR 97331 · Shared ride · 1 passenger",
       pickupAddress: "PDX Island 2 · Scheduled Airporter sign by the Information Booth",
-      note: "Where: from baggage claim, exit the door nearest carousel 10, cross to Island 2; shuttle stops by the Information Booth under the 'Scheduled Airporter' sign · $61.00 paid ($66 fare − $5 discount), Visa · Cancel/change by 11:59 PM the day before (credit only, no refunds) · Conf: add on phone"
+      note: "Rescheduled from 1:00 AM to 5:30 AM due to the Southwest rebooking (WN 3452 lands PDX ~1:25 AM) · Where: from baggage claim, exit the door nearest carousel 10, cross to Island 2; shuttle stops by the Information Booth under the 'Scheduled Airporter' sign · $61.00 paid ($66 fare − $5 discount), Visa · Cancel/change by 11:59 PM the day before (credit only, no refunds) · Conf: add on phone"
     };
     const OKC_SHUTTLE_RECEIPT_NOTE_OLD = "Outbound only (Corvallis → PDX Mon Oct 12) · received in travel inbox 9:43 AM PT Oct 11 · return leg not booked";
     const OKC_SHUTTLE_RECEIPT_NOTE = "Both legs received in travel inbox · outbound (Corvallis → PDX Mon Oct 12) 9:43 AM PT Oct 11 · return (PDX → Corvallis Fri Oct 16) 3:26 PM PT Oct 14";
@@ -775,6 +777,27 @@
           ret.status = "booked";
           const r = (okc.receipts || []).find((x) => x.id === "shuttle");
           if (!r || blank(r.note) || r.note === OKC_SHUTTLE_RECEIPT_NOTE_OLD) markReceipt(okc, "shuttle", OKC_SHUTTLE_RECEIPT_NOTE);
+          return store;
+        }
+      },
+      {
+        id: "2026-10-15-okc-return-rebooked-phx",
+        apply(store) {
+          // Southwest rebooked the return via PHX; Groome return moved to 5:30 AM.
+          const okc = findOkcTrip(store);
+          if (!okc) return store;
+          normalizeTrip(okc);
+          const fresh = okcFlights().filter((f) => /^Return/.test(f.leg));
+          const keep = (okc.flights || []).filter((f) => !/^Return/.test(f.leg || "") && !/WN (3232|1778|3243|3452)/.test(f.flight || ""));
+          okc.flights = keep.concat(fresh);
+          const out = okc.shuttles.find((s) => /^to\s*airport/i.test(s.leg || "")) || okc.shuttles[0];
+          const ret = okc.shuttles.find((s) => s !== out && /^from\s*airport/i.test(s.leg || ""));
+          if (ret) {
+            const w = String(ret.when || "").trim();
+            if (!/5:30 AM/.test(w)) ret.when = OKC_GROOME_RET.when;
+            const n = String(ret.note || "").trim();
+            if (!/Rescheduled from 1:00 AM/.test(n)) ret.note = (!n || n === OKC_GROOME_RET_NOTE_V16) ? OKC_GROOME_RET.note : "Rescheduled from 1:00 AM to 5:30 AM due to the Southwest rebooking (WN 3452 lands PDX ~1:25 AM) · " + n;
+          }
           return store;
         }
       }
