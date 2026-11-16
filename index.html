@@ -209,7 +209,7 @@
       };
     }
 
-    const APP_VERSION = "v18 · 2026-10-15";
+    const APP_VERSION = "v19 · 2026-11-15";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -277,43 +277,43 @@
     }
 
     function yulFlights() {
-      const timeNote = "Times as listed in AC email (local); listed durations disagree with YVR times — verify in AC app";
+      const timeNote = "Times rechecked Nov 15 (local) — confirm in the Air Canada app";
       return [
         {
           leg: "Outbound 1/2 · Sun Nov 29",
           summary: "Air Canada AC 8651 · PDX → YVR",
-          when: "Sun Nov 29 · 10:00 AM – 12:19 PM",
+          when: "Sun Nov 29 · 10:00 AM – 11:19 AM",
           detail: "Operated by Air Canada Express – Jazz (Dash 8-400) · Economy (L) · Change planes in YVR (1h 31m) · Seat not assigned · " + timeNote,
           status: "booked",
           airline: "Air Canada", flight: "AC 8651", from: "PDX", to: "YVR",
-          date: "2026-11-29", depart: "10:00", arrive: "12:19", seat: ""
+          date: "2026-11-29", depart: "10:00", arrive: "11:19", seat: ""
         },
         {
           leg: "Outbound 2/2 · Sun Nov 29",
           summary: "Air Canada AC 308 · YVR → YUL",
-          when: "Sun Nov 29 · 1:50 PM – 8:30 PM",
-          detail: "Boeing 787-9 · Economy (L) · Arrive Montréal-Trudeau · Seat not assigned",
+          when: "Sun Nov 29 · 12:50 PM PT – 8:30 PM ET",
+          detail: "Boeing 787-9 · Economy (L) · Arrive Montréal-Trudeau · Seat not assigned · " + timeNote,
           status: "booked",
           airline: "Air Canada", flight: "AC 308", from: "YVR", to: "YUL",
-          date: "2026-11-29", depart: "13:50", arrive: "20:30", seat: ""
+          date: "2026-11-29", depart: "12:50", arrive: "20:30", seat: ""
         },
         {
           leg: "Return 1/2 · Fri Dec 4",
           summary: "Air Canada AC 303 · YUL → YVR",
-          when: "Fri Dec 4 · 8:45 AM – 12:20 PM",
+          when: "Fri Dec 4 · 8:45 AM ET – 11:20 AM PT",
           detail: "Boeing 787-9 · Economy (G) · Change planes in YVR (2h 05m) · Seat not assigned · " + timeNote,
           status: "booked",
           airline: "Air Canada", flight: "AC 303", from: "YUL", to: "YVR",
-          date: "2026-12-04", depart: "08:45", arrive: "12:20", seat: ""
+          date: "2026-12-04", depart: "08:45", arrive: "11:20", seat: ""
         },
         {
           leg: "Return 2/2 · Fri Dec 4",
           summary: "Air Canada AC 8652 · YVR → PDX",
-          when: "Fri Dec 4 · 2:25 PM – 2:41 PM",
-          detail: "Operated by Air Canada Express – Jazz (Dash 8-400) · Economy (G) · Arrive Portland · Seat not assigned",
+          when: "Fri Dec 4 · 1:25 PM – 2:41 PM",
+          detail: "Operated by Air Canada Express – Jazz (Dash 8-400) · Economy (G) · Arrive Portland · Seat not assigned · " + timeNote,
           status: "booked",
           airline: "Air Canada", flight: "AC 8652", from: "YVR", to: "PDX",
-          date: "2026-12-04", depart: "14:25", arrive: "14:41", seat: ""
+          date: "2026-12-04", depart: "13:25", arrive: "14:41", seat: ""
         }
       ];
     }
@@ -463,6 +463,33 @@
       });
     }
 
+
+    // ---- Groome Montréal (confirmations/amounts: add on phone; page is public) ----
+    const YUL_COURTYARD = "Courtyard by Marriott, 400 SW 1st St, Corvallis, OR 97333";
+    const YUL_GROOME_OUT = {
+      when: "Sun Nov 29, 2026 · 4:35 AM pickup · arrive PDX ~7:00 AM",
+      route: "Corvallis Courtyard by Marriott → Portland PDX · Shared ride · 1 passenger",
+      note: "For Air Canada AC 8651 departing 10:00 AM (Groome lists 10:30 AM) · Paid · Cancel/change by 11:59 PM the day before (credit only, no refunds) · Conf: add on phone"
+    };
+    const YUL_GROOME_RET = {
+      when: "Fri Dec 4, 2026 · 3:30 PM pickup at PDX · arrive Courtyard ~5:55 PM",
+      route: "Portland PDX → Corvallis Courtyard by Marriott, 400 SW 1st St · Shared ride · 1 passenger",
+      pickupAddress: "PDX Island 2 · Scheduled Airporter sign by the Information Booth",
+      note: "After AC 8652 lands 2:41 PM (tight ~49 min) · If missed, call Groome to move to the 4:30 PM (arrives ~6:55 PM) · Where: exit baggage claim nearest carousel 10, cross to Island 2 · Paid · Cancel/change by 11:59 PM the day before (credit only, no refunds) · Conf: add on phone"
+    };
+    function yulGroomeOutbound() {
+      return Object.assign(emptyShuttle("To airport", YUL_GROOME_OUT.note), {
+        when: YUL_GROOME_OUT.when, route: YUL_GROOME_OUT.route,
+        pickupAddress: YUL_COURTYARD, phone: GROOME_PHONE, status: "booked"
+      });
+    }
+    function yulGroomeReturn() {
+      return Object.assign(emptyShuttle("From airport", YUL_GROOME_RET.note), {
+        when: YUL_GROOME_RET.when, route: YUL_GROOME_RET.route,
+        pickupAddress: YUL_GROOME_RET.pickupAddress, phone: GROOME_PHONE, status: "booked"
+      });
+    }
+
     function markReceipt(trip, id, note) {
       if (!Array.isArray(trip.receipts)) trip.receipts = standardReceipts();
       const r = trip.receipts.find((x) => x.id === id);
@@ -489,12 +516,12 @@
         dates: "Sun Nov 29 – Fri Dec 4, 2026 · PDX ⇄ YUL via YVR",
         booking: yulBooking(),
         flights: yulFlights(),
-        shuttleRoundTrip: true,
+        shuttleRoundTrip: false,
         shuttleRoundTripConfirmation: "",
         shuttleRoundTripBookUrl: GROOME_URL,
         shuttles: [
-          emptyShuttle("To airport", "Home area → PDX · flight departs 10:00 AM Sun Nov 29"),
-          emptyShuttle("From airport", "PDX → Home area · flight lands 2:41 PM Fri Dec 4")
+          yulGroomeOutbound(),
+          yulGroomeReturn()
         ],
         rentals: [],
         extras: emptyExtras(),
@@ -797,6 +824,34 @@
             if (!/5:30 AM/.test(w)) ret.when = OKC_GROOME_RET.when;
             const n = String(ret.note || "").trim();
             if (!/Rescheduled from 1:00 AM/.test(n)) ret.note = (!n || n === OKC_GROOME_RET_NOTE_V16) ? OKC_GROOME_RET.note : "Rescheduled from 1:00 AM to 5:30 AM due to the Southwest rebooking (WN 3452 lands PDX ~1:25 AM) · " + n;
+          }
+          return store;
+        }
+      },
+      {
+        id: "2026-11-15-yul-times-groome",
+        apply(store) {
+          // Fix YVR-side flight times (DST) and add booked Groome legs; keep user-entered data.
+          const yul = (store.trips || []).find((t) => t.id === "yul-2026-11");
+          if (!yul) return store;
+          normalizeTrip(yul);
+          const fresh = yulFlights();
+          (yul.flights || []).forEach((f) => {
+            const n = fresh.find((x) => x.flight === f.flight);
+            if (n) ["when", "detail", "depart", "arrive", "date", "from", "to"].forEach((k) => { f[k] = n[k]; });
+          });
+          fresh.forEach((n) => { if (!yul.flights.some((f) => f.flight === n.flight)) yul.flights.push(n); });
+          const pairs = [[/^to\s*airport/i, yulGroomeOutbound()], [/^from\s*airport/i, yulGroomeReturn()]];
+          pairs.forEach(([re, tpl]) => {
+            let s = yul.shuttles.find((x) => re.test(x.leg || ""));
+            if (!s) { yul.shuttles.push(tpl); return; }
+            ["carrier", "when", "route", "pickupAddress", "note", "status", "phone"].forEach((k) => { s[k] = tpl[k]; });
+            // confirmation (user-entered on device) is kept as is
+          });
+          if (yul.shuttleRoundTrip) {
+            const conf = String(yul.shuttleRoundTripConfirmation || "").trim();
+            yul.shuttleRoundTrip = false;
+            if (conf) yul.shuttles.forEach((x) => { if (!x.confirmation) x.confirmation = conf; });
           }
           return store;
         }
