@@ -81,7 +81,7 @@
     }
     .chip.warn { background: #422006; color: #fcd34d; }
     .chip.good { background: #052e16; color: #86efac; }
-    textarea, input, select.field {
+    textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select.field {
       width: 100%;
       background: #0f172a;
       border: 1px solid var(--line);
@@ -91,14 +91,59 @@
       font: inherit;
       margin-top: 6px;
     }
+    input[type="checkbox"] {
+      width: 1.25em;
+      height: 1.25em;
+      min-width: 1.25em;
+      min-height: 1.25em;
+      margin: 0;
+      padding: 0;
+      flex-shrink: 0;
+      accent-color: var(--accent);
+      background: none;
+      border: 0;
+      border-radius: 0;
+    }
     .edit-panel { display: none; }
     body.editing .edit-panel { display: block; }
     body.editing .view-panel { display: none; }
     .toolbar, .trip-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
     .hint { font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
     ul.check { list-style: none; padding: 0; margin: 0; }
-    ul.check li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    ul.check li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      line-height: 1.45;
+    }
     ul.check li:last-child { border-bottom: 0; }
+    ul.check li input[type="checkbox"] {
+      width: 1.25em;
+      height: 1.25em;
+      min-width: 1.25em;
+      margin: 0.15em 0 0;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    ul.check li > span {
+      flex: 1;
+      min-width: 0;
+      line-height: 1.45;
+    }
+    ul.check li.na { color: var(--muted); opacity: 0.7; }
+    ul.check li.na input[type="checkbox"] { opacity: 0.45; pointer-events: none; }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #172554;
+      color: #93c5fd;
+      margin: 4px 0 2px;
+    }
     footer { margin-top: 24px; color: var(--muted); font-size: 0.8rem; }
     .toggle-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
     .toggle-row input { width: auto; margin: 0; }
@@ -113,7 +158,7 @@
     .extras-line:first-of-type { border-top: 0; margin-top: 4px; padding-top: 0; }
     .extras-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
     .extras-item { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; }
-    .extras-item input[type=checkbox] { width: auto; margin: 4px 0 0; }
+    .extras-item input[type=checkbox] { margin: 0.15em 0 0; }
     .extras-item .grow { flex: 1; min-width: 0; }
     .extras-edit { margin: 4px 0 8px 28px; }
     .extras-edit label { display: block; margin-top: 6px; }
@@ -239,7 +284,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v21</div>
+    <div id="appVersion">App v22</div>
   </footer>
 
   <script src="./vendor/pdfjs/pdf.min.js"></script>
@@ -262,7 +307,7 @@
       };
     }
 
-    const APP_VERSION = "v21 · 2026-11-17";
+    const APP_VERSION = "v22 · 2026-11-17";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -578,7 +623,7 @@
         ],
         rentals: [],
         extras: emptyExtras(),
-        lodging: { name: "Hotel TBD", address: "", checkIn: "Nov 29", checkOut: "Dec 4", confirmation: "" },
+        lodging: { name: "", address: "", checkIn: "Nov 29", checkOut: "Dec 4", confirmation: "", employerBooked: true },
         sites: [{ name: "Work site / customer", address: "", note: "Paste street address for one-tap Uber" }],
         receipts: standardReceipts()
       };
@@ -905,6 +950,25 @@
             const conf = String(yul.shuttleRoundTripConfirmation || "").trim();
             yul.shuttleRoundTrip = false;
             if (conf) yul.shuttles.forEach((x) => { if (!x.confirmation) x.confirmation = conf; });
+          }
+          return store;
+        }
+      },
+      {
+        id: "2026-11-17-yul-employer-booked-lodging",
+        apply(store) {
+          // Employer booked Montréal lodging. Set employerBooked if unset / still a placeholder name. Never overwrite typed name or address.
+          const yul = (store.trips || []).find((t) => t.id === "yul-2026-11");
+          if (!yul) return store;
+          normalizeTrip(yul);
+          if (!yul.lodging || typeof yul.lodging !== "object") {
+            yul.lodging = { name: "", address: "", checkIn: "", checkOut: "", confirmation: "" };
+          }
+          const L = yul.lodging;
+          const name = String(L.name || "").trim();
+          const placeholder = !name || /^hotel\s*tbd$/i.test(name);
+          if (L.employerBooked === undefined && (placeholder || L.employerBooked === undefined)) {
+            L.employerBooked = true;
           }
           return store;
         }
@@ -1667,12 +1731,15 @@
         <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" id="addRental">Add rental</button></div></div>`;
 
       const L = trip.lodging;
+      const employerBooked = !!(L && L.employerBooked);
       if (L && typeof L === "object") {
         const uHotel = uberUrl(L.address);
         const mHotel = mapsUrl(L.address);
+        const stayName = (L.name || "").trim() && !/^hotel\s*tbd$/i.test(L.name.trim()) ? L.name.trim() : (employerBooked ? "Lodging" : "Hotel TBD");
         document.getElementById("lodging").innerHTML = cardWrap(trip, "lodging", `<div class="label">Stay</div>`,
-          [L.name || "Hotel TBD", L.checkOut && ("out " + L.checkOut)].filter(Boolean).join(" · "), `
-          <div class="value">${escapeHtml(L.name || "Hotel TBD")}</div>
+          [stayName, employerBooked && "employer booked", L.checkOut && ("out " + L.checkOut)].filter(Boolean).join(" · "), `
+          <div class="value">${escapeHtml(stayName)}</div>
+          ${employerBooked ? `<div class="badge">Booked by employer</div>` : ""}
           <div>${L.address ? escapeHtml(L.address) : '<span class="hint">Add address for Uber / Maps</span>'}</div>
           <div class="hint">${escapeHtml([L.checkIn && ("In " + L.checkIn), L.checkOut && ("Out " + L.checkOut), L.confirmation && ("Conf " + L.confirmation)].filter(Boolean).join(" · "))}</div>
           ${L.note ? `<div class="hint">${escapeHtml(L.note)}</div>` : ""}
@@ -1680,7 +1747,19 @@
             ${uHotel ? `<a class="btn uber" href="${uHotel}">Open in Uber</a>` : `<button type="button" class="secondary" disabled>Uber (need address)</button>`}
             ${mHotel ? `<a class="btn maps" href="${mHotel}">Maps</a>` : ""}
             ${L.address ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(L.address)}">Copy address</button>` : ""}
-          </div>`, { ref: "lodging", name: "lodging " + (L.name || "Hotel TBD") });
+          </div>
+          <div class="edit-panel rental-edit site-edit lodging-edit">
+            <label class="label">Name<input type="text" data-lodging-field="name" value="${escapeHtml(L.name || "")}" autocomplete="off" /></label>
+            <label class="label">Address<input type="text" class="site-address-input" data-lodging-field="address" value="${escapeHtml(L.address || "")}" placeholder="Paste street address" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" /></label>
+            <label class="label">Check-in<input type="text" data-lodging-field="checkIn" value="${escapeHtml(L.checkIn || "")}" autocomplete="off" /></label>
+            <label class="label">Check-out<input type="text" data-lodging-field="checkOut" value="${escapeHtml(L.checkOut || "")}" autocomplete="off" /></label>
+            <label class="label">Note<input type="text" data-lodging-field="note" value="${escapeHtml(L.note || "")}" autocomplete="off" /></label>
+            <div class="toggle-row">
+              <input type="checkbox" id="employerBooked" data-lodging-employer ${employerBooked ? "checked" : ""} />
+              <span class="label">Booked by employer</span>
+            </div>
+            <div class="actions"><button type="button" class="danger" id="removeLodgingBtn">Remove lodging</button></div>
+          </div>`, { ref: "lodging", name: "lodging " + stayName });
       } else {
         document.getElementById("lodging").innerHTML = `<div class="card hint view-panel">No lodging</div>
           <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" class="secondary" id="addLodging">Add lodging</button></div></div>`;
@@ -1707,14 +1786,24 @@
         <div class="edit-panel"><div class="actions" style="margin:0 0 10px"><button type="button" class="secondary" id="addSite">Add site</button></div></div>`;
 
       const rc = trip.receipts || [];
+      const countable = rc.filter((r) => !(r.id === "hotel" && employerBooked));
       document.getElementById("receiptsCard").innerHTML = cardWrap(trip, "receipts", `<div class="value">Receipt checklist</div>`,
-        `${rc.filter((r) => r.done).length} of ${rc.length} received`, `
+        `${countable.filter((r) => r.done).length} of ${countable.length} received`, `
         <p class="hint" style="margin-top:0">Confirm mail to your travel inbox (add confirmations on phone — this page is public).</p>
-        <ul class="check" id="receipts">${rc.map((r) => `
-        <li>
+        <ul class="check" id="receipts">${rc.map((r) => {
+          const na = r.id === "hotel" && employerBooked;
+          const label = na ? "Hotel receipt — not needed (employer booked)" : r.label;
+          if (na) {
+            return `<li class="na">
+          <input type="checkbox" disabled tabindex="-1" aria-label="${escapeHtml(label)}" />
+          <span>${escapeHtml(label)}<br><span class="hint">N/A</span></span>
+        </li>`;
+          }
+          return `<li>
           <input type="checkbox" data-receipt="${escapeHtml(r.id)}" ${r.done ? "checked" : ""} />
           <span>${escapeHtml(r.label)}${r.note ? `<br><span class="hint">${escapeHtml(r.note)}</span>` : ""}</span>
-        </li>`).join("")}</ul>`);
+        </li>`;
+        }).join("")}</ul>`);
 
       wireCopyButtons();
       renderDocs(trip);
@@ -1762,7 +1851,7 @@
       const addBtn = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = () => { const st = loadStore(); const t = activeTrip(st); fn(t); normalizeTrip(t); saveStore(st); render(); }; };
       addBtn("addShuttle", (t) => t.shuttles.push(emptyShuttle(t.shuttles.length ? "From airport" : "To airport")));
       addBtn("addSite", (t) => t.sites.push({ name: "Work site / customer", address: "", note: "" }));
-      addBtn("addLodging", (t) => { t.lodging = { name: "Hotel TBD", address: "", checkIn: "", checkOut: "", confirmation: "" }; });
+      addBtn("addLodging", (t) => { t.lodging = { name: "Hotel TBD", address: "", checkIn: "", checkOut: "", confirmation: "", employerBooked: false }; });
 
       document.querySelectorAll("[data-rental-field]").forEach((inp) => {
         inp.onchange = () => {
@@ -1788,6 +1877,41 @@
         inp.oninput = saveSite;
         inp.onchange = () => { saveSite(); render(); };
       });
+      document.querySelectorAll("[data-lodging-field]").forEach((inp) => {
+        const saveLodging = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          if (!t.lodging || typeof t.lodging !== "object") t.lodging = {};
+          t.lodging[inp.dataset.lodgingField] = inp.value.trim();
+          saveStore(st);
+          document.getElementById("editJson").value = JSON.stringify(t, null, 2);
+        };
+        inp.oninput = saveLodging;
+        inp.onchange = () => { saveLodging(); render(); };
+      });
+      const empBox = document.getElementById("employerBooked");
+      if (empBox) {
+        empBox.onchange = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          if (!t.lodging || typeof t.lodging !== "object") t.lodging = {};
+          t.lodging.employerBooked = empBox.checked;
+          saveStore(st);
+          render();
+        };
+      }
+      const rmLodge = document.getElementById("removeLodgingBtn");
+      if (rmLodge) {
+        rmLodge.onclick = () => {
+          if (!confirm("Remove lodging from this trip?")) return;
+          const st = loadStore();
+          const t = activeTrip(st);
+          t.lodging = null;
+          if (t.ui && t.ui.collapsed) delete t.ui.collapsed.lodging;
+          saveStore(st);
+          render();
+        };
+      }
       document.querySelectorAll("[data-rental-delete]").forEach((btn) => {
         btn.onclick = () => {
           if (!confirm("Delete this rental car?")) return;

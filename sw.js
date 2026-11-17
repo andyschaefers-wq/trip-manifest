@@ -1,4 +1,4 @@
-const CACHE = 'trip-manifest-v21';
+const CACHE = 'trip-manifest-v22';
 const ASSETS = [
   './',
   './index.html',
