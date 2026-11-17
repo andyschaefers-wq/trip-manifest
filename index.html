@@ -127,6 +127,32 @@
     .minimized > .card-body { display: none; }
     .card.minimized { padding: 10px 14px; }
     .alert-card { background: #422006; border-color: #a16207; color: #fde68a; }
+    .doc-item { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .doc-item:last-of-type { border-bottom: 0; }
+    .doc-show { min-height: 48px; flex: 1; justify-content: center; font-size: 1.05rem; }
+    #pdfOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: #000;
+      flex-direction: column;
+    }
+    #pdfOverlay.open { display: flex; }
+    #pdfOverlay .pdf-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+      background: #0f172a;
+    }
+    #pdfOverlay .pdf-bar .grow { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #pdfOverlay iframe, #pdfOverlay embed {
+      flex: 1;
+      width: 100%;
+      border: 0;
+      background: #fff;
+    }
   </style>
 </head>
 <body>
@@ -149,6 +175,19 @@
     <p class="sub" id="tripDates">Mon Oct 12 – Thu Oct 15, 2026 · PDX</p>
   </div>
   <div id="extrasAlert"></div>
+
+  <h2>Travel documents</h2>
+  <div id="docsCard"></div>
+  <input type="file" id="docFile" accept="application/pdf" hidden />
+
+  <div id="pdfOverlay" aria-hidden="true">
+    <div class="pdf-bar">
+      <div class="grow" id="pdfTitle">PDF</div>
+      <button type="button" class="secondary" id="pdfOpenExt">Open in browser</button>
+      <button type="button" id="pdfClose">Close</button>
+    </div>
+    <iframe id="pdfFrame" title="Travel document"></iframe>
+  </div>
 
   <div class="edit-panel">
     <label class="label">Trip title</label>
@@ -187,7 +226,7 @@
 
   <footer>
     Switch trips with the menu at the top. Android: Chrome → Add to Home screen. Works offline after first open.
-    <div id="appVersion">App v18</div>
+    <div id="appVersion">App v20</div>
   </footer>
 
   <script>
@@ -209,7 +248,7 @@
       };
     }
 
-    const APP_VERSION = "v19 · 2026-11-15";
+    const APP_VERSION = "v20 · 2026-11-17";
     const APPLIED_KEY = "trip-manifest-applied-updates";
 
     // ---- Booked itineraries (confirmations/tickets: add on phone; page is public) ----
@@ -1067,6 +1106,275 @@
       ).join("");
     }
 
+    const DOCS_DB = "trip-manifest-docs-v1";
+    const DOCS_STORE = "docs";
+    let docsRenderSeq = 0;
+    let pdfObjectUrl = "";
+
+    function openDocsDb() {
+      return new Promise((resolve, reject) => {
+        if (!window.indexedDB) {
+          reject(new Error("This browser can't store PDFs on the phone."));
+          return;
+        }
+        const req = indexedDB.open(DOCS_DB, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(DOCS_STORE)) {
+            const os = db.createObjectStore(DOCS_STORE, { keyPath: "id" });
+            os.createIndex("tripId", "tripId", { unique: false });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error("Couldn't open document storage"));
+      });
+    }
+
+    function listDocs(tripId) {
+      return openDocsDb().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(DOCS_STORE, "readonly");
+        const req = tx.objectStore(DOCS_STORE).index("tripId").getAll(tripId);
+        req.onsuccess = () => {
+          const rows = (req.result || []).map((r) => ({ id: r.id, name: r.name, addedAt: r.addedAt }));
+          rows.sort((a, b) => String(a.addedAt || "").localeCompare(String(b.addedAt || "")));
+          resolve(rows);
+        };
+        req.onerror = () => reject(req.error);
+      }));
+    }
+
+    function getDoc(id) {
+      return openDocsDb().then((db) => new Promise((resolve, reject) => {
+        const req = db.transaction(DOCS_STORE, "readonly").objectStore(DOCS_STORE).get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      }));
+    }
+
+    function addDoc(tripId, file) {
+      const rec = {
+        id: "doc-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+        tripId,
+        name: (file && file.name) ? String(file.name).replace(/^.*[\\/]/, "") : "document.pdf",
+        addedAt: new Date().toISOString(),
+        blob: file
+      };
+      return openDocsDb().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(DOCS_STORE, "readwrite");
+        tx.objectStore(DOCS_STORE).add(rec);
+        tx.oncomplete = () => resolve(rec);
+        tx.onerror = () => reject(tx.error);
+      }));
+    }
+
+    function removeDoc(id) {
+      return openDocsDb().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(DOCS_STORE, "readwrite");
+        tx.objectStore(DOCS_STORE).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      }));
+    }
+
+    function deleteDocsForTrip(tripId) {
+      return openDocsDb().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(DOCS_STORE, "readwrite");
+        const req = tx.objectStore(DOCS_STORE).index("tripId").openCursor(IDBKeyRange.only(tripId));
+        req.onsuccess = () => {
+          const c = req.result;
+          if (c) { c.delete(); c.continue(); }
+        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      }));
+    }
+
+    function gcOrphanDocs(store) {
+      const keep = new Set((store.trips || []).map((t) => t.id));
+      return openDocsDb().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(DOCS_STORE, "readwrite");
+        const req = tx.objectStore(DOCS_STORE).openCursor();
+        req.onsuccess = () => {
+          const c = req.result;
+          if (!c) return;
+          if (!keep.has(c.value.tripId)) c.delete();
+          c.continue();
+        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      }));
+    }
+
+    function fmtAdded(iso) {
+      try {
+        const d = new Date(iso);
+        if (isNaN(d)) return iso || "";
+        return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      } catch (_) {
+        return iso || "";
+      }
+    }
+
+    function closePdfOverlay() {
+      const ov = document.getElementById("pdfOverlay");
+      const frame = document.getElementById("pdfFrame");
+      if (ov) {
+        ov.classList.remove("open");
+        ov.setAttribute("aria-hidden", "true");
+      }
+      if (frame) frame.src = "about:blank";
+      if (pdfObjectUrl) {
+        try { URL.revokeObjectURL(pdfObjectUrl); } catch (_) {}
+        pdfObjectUrl = "";
+      }
+    }
+
+    function openPdfOverlay(url, name) {
+      const ov = document.getElementById("pdfOverlay");
+      const frame = document.getElementById("pdfFrame");
+      const title = document.getElementById("pdfTitle");
+      if (title) title.textContent = name || "PDF";
+      if (frame) frame.src = url;
+      if (ov) {
+        ov.classList.add("open");
+        ov.setAttribute("aria-hidden", "false");
+      }
+    }
+
+    async function showPdf(rec) {
+      if (!rec || !rec.blob) {
+        alert("That PDF isn't on this phone anymore.");
+        return;
+      }
+      closePdfOverlay();
+      pdfObjectUrl = URL.createObjectURL(rec.blob);
+      let opened = null;
+      try { opened = window.open(pdfObjectUrl, "_blank"); } catch (_) { opened = null; }
+      if (opened) {
+        setTimeout(() => {
+          const ov = document.getElementById("pdfOverlay");
+          if (pdfObjectUrl && !(ov && ov.classList.contains("open"))) {
+            try { URL.revokeObjectURL(pdfObjectUrl); } catch (_) {}
+            pdfObjectUrl = "";
+          }
+        }, 120000);
+        return;
+      }
+      try {
+        const a = document.createElement("a");
+        a.href = pdfObjectUrl;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // If a new tab didn't take over (common in the installed app), show the in-app viewer.
+        setTimeout(() => {
+          if (document.visibilityState === "visible") openPdfOverlay(pdfObjectUrl, rec.name);
+        }, 400);
+        return;
+      } catch (_) {}
+      openPdfOverlay(pdfObjectUrl, rec.name);
+    }
+
+    function wireDocsButtons(tripId) {
+      const add = document.getElementById("addPdfBtn");
+      if (add) add.onclick = () => document.getElementById("docFile").click();
+      const restore = document.getElementById("addDocsCard");
+      if (restore) {
+        restore.onclick = () => {
+          const st = loadStore();
+          const t = activeTrip(st);
+          if (t.ui) t.ui.hideDocs = false;
+          saveStore(st);
+          render();
+        };
+      }
+      document.querySelectorAll("[data-doc-show]").forEach((btn) => {
+        btn.onclick = async () => {
+          try {
+            const rec = await getDoc(btn.dataset.docShow);
+            await showPdf(rec);
+          } catch (e) {
+            alert("Couldn't open that PDF: " + (e.message || e));
+          }
+        };
+      });
+      document.querySelectorAll("[data-doc-remove]").forEach((btn) => {
+        btn.onclick = async () => {
+          const name = btn.dataset.docName || "this PDF";
+          if (!confirm("Remove " + name + " from this trip? It's only stored on this phone.")) return;
+          try {
+            await removeDoc(btn.dataset.docRemove);
+            render();
+          } catch (e) {
+            alert("Couldn't remove that PDF: " + (e.message || e));
+          }
+        };
+      });
+    }
+
+    async function renderDocs(trip) {
+      const seq = ++docsRenderSeq;
+      const el = document.getElementById("docsCard");
+      if (!el) return;
+      if (trip.ui && trip.ui.hideDocs) {
+        el.innerHTML = `<div class="edit-panel"><div class="actions"><button type="button" class="secondary" id="addDocsCard">Add travel documents card</button></div></div>`;
+        wireDocsButtons(trip.id);
+        return;
+      }
+      el.innerHTML = cardWrap(trip, "docs", `<div class="value">Travel documents</div>`, "…", `<div class="hint">Loading…</div>`);
+      let docs = [];
+      let err = "";
+      try { docs = await listDocs(trip.id); } catch (e) { err = e.message || String(e); }
+      if (seq !== docsRenderSeq) return;
+      const sum = err ? "Unavailable" : (docs.length ? (docs.length + " PDF" + (docs.length === 1 ? "" : "s")) : "No PDFs yet");
+      const list = docs.map((d) => `
+        <div class="doc-item">
+          <div class="value">${escapeHtml(d.name || "document.pdf")}</div>
+          <div class="hint">Added ${escapeHtml(fmtAdded(d.addedAt))}</div>
+          <div class="actions">
+            <button type="button" class="doc-show" data-doc-show="${escapeHtml(d.id)}">Show</button>
+            <button type="button" class="danger" data-doc-remove="${escapeHtml(d.id)}" data-doc-name="${escapeHtml(d.name || "this PDF")}">Remove</button>
+          </div>
+        </div>`).join("") || `<div class="hint">No PDFs added yet.</div>`;
+      el.innerHTML = cardWrap(trip, "docs", `<div class="value">Travel documents</div>`, sum, `
+        ${err ? `<div class="hint">${escapeHtml(err)}</div>` : list}
+        <div class="actions"><button type="button" class="secondary" id="addPdfBtn">Add PDF</button></div>
+        <p class="hint">PDFs stay on this phone only — they are never uploaded, and Export / Import does not include them. Clearing this site's browser data deletes them.</p>`,
+        { ref: "docs", name: "Travel documents card" });
+      wireDocsButtons(trip.id);
+      document.querySelectorAll("#docsCard [data-min], #docsCard [data-remove]").forEach((btn) => {
+        if (btn.dataset.min) {
+          btn.onclick = () => {
+            const st = loadStore();
+            const t = activeTrip(st);
+            t.ui = t.ui && typeof t.ui === "object" ? t.ui : {};
+            t.ui.collapsed = t.ui.collapsed && typeof t.ui.collapsed === "object" ? t.ui.collapsed : {};
+            const k = btn.dataset.min;
+            if (t.ui.collapsed[k]) delete t.ui.collapsed[k]; else t.ui.collapsed[k] = true;
+            saveStore(st);
+            render();
+          };
+        }
+      });
+      const rm = document.querySelector("#docsCard [data-remove]");
+      if (rm) {
+        rm.onclick = async () => {
+          if (!confirm("Remove the Travel documents card and delete all PDFs saved for this trip on this phone?")) return;
+          const st = loadStore();
+          const t = activeTrip(st);
+          try { await deleteDocsForTrip(t.id); } catch (e) { alert("Couldn't delete saved PDFs: " + (e.message || e)); return; }
+          t.ui = t.ui && typeof t.ui === "object" ? t.ui : {};
+          t.ui.hideDocs = true;
+          if (t.ui.collapsed) delete t.ui.collapsed.docs;
+          saveStore(st);
+          render();
+        };
+      }
+    }
+
     function wireCopyButtons() {
       document.querySelectorAll(".copy-btn").forEach((btn) => {
         btn.onclick = async () => {
@@ -1139,12 +1447,9 @@
       const lineHtml = (path, title) => {
         const items = extrasLine(ex, path);
         const total = lineTotal(items);
-        const key = "x:" + path;
-        const m = isMin(trip, key);
         return `
-          <div class="extras-line${m ? " minimized" : ""}" data-extras-line="${path}" data-card="${key}">
-            <div class="extras-head"><span class="label grow">${escapeHtml(title)}${m ? ` · ${items.length} item${items.length === 1 ? "" : "s"}` : ""}</span><span class="mono" data-extras-total="${path}">${items.length ? "Total " + fmtMoney(total) : ""}</span>
-              <button type="button" class="icon-btn" data-min="${key}" aria-expanded="${!m}" aria-label="${m ? "Expand" : "Minimize"}">${m ? "▸" : "▾"}</button></div>
+          <div class="extras-line" data-extras-line="${path}">
+            <div class="extras-head"><span class="label grow">${escapeHtml(title)}</span><span class="mono" data-extras-total="${path}">${items.length ? "Total " + fmtMoney(total) : ""}</span></div>
             <div class="card-body">
             ${items.map((it, i) => `
               <div class="extras-item">
@@ -1298,6 +1603,7 @@
         </li>`).join("")}</ul>`);
 
       wireCopyButtons();
+      renderDocs(trip);
 
       document.querySelectorAll("[data-min]").forEach((btn) => {
         btn.onclick = () => {
@@ -1513,9 +1819,11 @@
       }
       const t = activeTrip(st);
       if (!confirm(`Delete "${t.title}"?`)) return;
+      const deletedId = t.id;
       st.trips = st.trips.filter((x) => x.id !== t.id);
       st.activeId = st.trips[0].id;
       saveStore(st);
+      deleteDocsForTrip(deletedId).catch((e) => console.warn("Couldn't delete trip PDFs", e));
       document.body.classList.remove("editing");
       document.getElementById("toggleEdit").textContent = "Edit trip";
       document.getElementById("saveTrip").hidden = true;
@@ -1553,6 +1861,7 @@
           if (!data.trips.some((t) => t.id === data.activeId)) data.activeId = data.trips[0].id;
           if (!confirm("Replace all trips on this device with the imported file?")) return;
           saveStore(data);
+          gcOrphanDocs(data).catch((e) => console.warn("Couldn't clean leftover PDFs", e));
           render();
         } catch (err) {
           alert("Import failed: " + err.message);
@@ -1564,6 +1873,30 @@
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {});
     }
+
+    document.getElementById("docFile").onchange = async (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      const isPdf = (file.type === "application/pdf") || /\.pdf$/i.test(file.name || "");
+      if (!isPdf) {
+        alert("Please choose a PDF.");
+        return;
+      }
+      const st = loadStore();
+      const t = activeTrip(st);
+      try {
+        await addDoc(t.id, file);
+        render();
+      } catch (err) {
+        alert("Couldn't save that PDF on this phone: " + (err.message || err));
+      }
+    };
+    document.getElementById("pdfClose").onclick = () => closePdfOverlay();
+    document.getElementById("pdfOpenExt").onclick = () => {
+      if (!pdfObjectUrl) return;
+      try { window.open(pdfObjectUrl, "_blank"); } catch (_) {}
+    };
 
     try { applyPendingUpdates(); } catch (e) { console.warn("Update merge failed", e); }
     document.getElementById("appVersion").textContent = "App " + APP_VERSION;
